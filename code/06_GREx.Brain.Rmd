@@ -1,0 +1,850 @@
+---
+title: "06_GREx.Brain"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Install packages #
+```{r}
+rm(list = ls())
+options(stringsAsFactors = FALSE)
+
+library(tidyverse)
+library(lme4)
+library(ggseg)
+library(ggseg3d)
+library(sjPlot)
+library(plotrix)
+library(ggridges)
+library(ggpubr)
+library(rstatix)
+theme_set(theme_minimal())
+```
+
+## Save the subcortical regions #
+```{r}
+my.plot <- ggseg(atlas=aseg, mapping=aes(fill=region), show.legend = F) 
+my.plot
+ggsave(my.plot, file = '../results/Figure1_BrainAtlas_Subcortical.pdf', device = cairo_pdf, width = 5, height=4, units = 'in')
+```
+  
+## Load data #
+```{r}
+load("ABCD.Release.3.0.C4.Merged.Data.PhewasVars.Rda")
+```
+
+## Average across left and right hemispheres #
+```{r}
+varlist <- c("smri_thick_cdk_bankssts", "smri_thick_cdk_cdacate", "smri_thick_cdk_cdmdfr", "smri_thick_cdk_cuneus", "smri_thick_cdk_ehinal", "smri_thick_cdk_fusiform", "smri_thick_cdk_ifpl", "smri_thick_cdk_iftm", "smri_thick_cdk_ihcate", "smri_thick_cdk_locc", "smri_thick_cdk_lobfr", "smri_thick_cdk_lingual", "smri_thick_cdk_mobfr", "smri_thick_cdk_mdtm", "smri_thick_cdk_parahpal", "smri_thick_cdk_paracn", "smri_thick_cdk_parsopc", "smri_thick_cdk_parsobis", "smri_thick_cdk_parstgris", "smri_thick_cdk_pericc", "smri_thick_cdk_postcn", "smri_thick_cdk_ptcate", "smri_thick_cdk_precn", "smri_thick_cdk_pc", "smri_thick_cdk_rracate", "smri_thick_cdk_rrmdfr", "smri_thick_cdk_sufr", "smri_thick_cdk_supl", "smri_thick_cdk_sutm", "smri_thick_cdk_sm", "smri_thick_cdk_frpole", "smri_thick_cdk_tmpole", "smri_thick_cdk_trvtm", "smri_thick_cdk_insula", "smri_area_cdk_bankssts", "smri_area_cdk_cdacate", "smri_area_cdk_cdmdfr", "smri_area_cdk_cuneus", "smri_area_cdk_ehinal", "smri_area_cdk_fusiform", "smri_area_cdk_ifpl", "smri_area_cdk_iftm", "smri_area_cdk_ihcate", "smri_area_cdk_locc", "smri_area_cdk_lobfr", "smri_area_cdk_lingual", "smri_area_cdk_mobfr", "smri_area_cdk_mdtm", "smri_area_cdk_parahpal", "smri_area_cdk_paracn", "smri_area_cdk_parsopc", "smri_area_cdk_parsobis", "smri_area_cdk_parstgris", "smri_area_cdk_pericc", "smri_area_cdk_postcn", "smri_area_cdk_ptcate", "smri_area_cdk_precn", "smri_area_cdk_pc", "smri_area_cdk_rracate", "smri_area_cdk_rrmdfr", "smri_area_cdk_sufr", "smri_area_cdk_supl", "smri_area_cdk_sutm", "smri_area_cdk_sm", "smri_area_cdk_frpole", "smri_area_cdk_tmpole", "smri_area_cdk_trvtm", "smri_area_cdk_insula", "smri_vol_scs_cbwmatter", "smri_vol_scs_ltventricle", "smri_vol_scs_inflatvent", "smri_vol_scs_crbwmatter", "smri_vol_scs_crbcortex", "smri_vol_scs_tp", "smri_vol_scs_caudate", "smri_vol_scs_putamen", "smri_vol_scs_pallidum", "smri_vol_scs_hpus", "smri_vol_scs_amygdala", "smri_vol_scs_vedc")
+
+for (i in 1:length(varlist)){
+  abcdData[, paste(varlist[[i]])] <- rowMeans(abcdData[,c(paste0(varlist[[i]], "rh"), paste0(varlist[[i]], "lh"))], na.rm=TRUE)
+}
+
+# NaN to NA
+is.nan.data.frame <- function(x)
+  do.call(cbind, lapply(x, is.nan))
+abcdData[is.nan(abcdData)] <- NA
+```
+
+## Filter data #
+```{r}
+abcdData_baseline <- abcdData %>% filter(eventname == "baseline_year_1_arm_1")
+abcdData_baseline %>% group_by(ethnicity) %>% tally() 
+
+abcdData_baseline_C4 <- abcdData_baseline %>% filter(!is.na(c4a_total))
+abcdData_baseline_C4 %>% group_by(ethnicity) %>% tally() 
+
+abcdData_baseline_C4_filtered <- abcdData_baseline_C4 %>% filter(ethnicity %in% c("AFR", "AMR", "EUR"))
+abcdData_baseline_C4_filtered %>% group_by(ethnicity) %>% tally() 
+
+abcdData_baseline_C4_filtered <- abcdData_baseline_C4_filtered %>%
+  filter(c4_allele1_structure %in% c("AL","AL-AL","AL-BL", "AL-BS", "BS"))
+abcdData_baseline_C4_filtered <- abcdData_baseline_C4_filtered %>%
+  filter(c4_allele2_structure %in% c("AL","AL-AL","AL-BL", "AL-BS", "BS"))
+
+abcdData_baseline_C4_filtered %>% group_by(rel_family_id) %>% tally() %>% arrange(desc(n))  
+```
+
+## Update labels #
+```{r}
+abcdData_baseline_C4_filtered$ethnicity <- as.factor(abcdData_baseline_C4_filtered$ethnicity)
+levels(abcdData_baseline_C4_filtered$ethnicity)
+levels(abcdData_baseline_C4_filtered$ethnicity) <- list (Latinx = "AMR", EUR = "EUR", AFR = "AFR")
+levels(abcdData_baseline_C4_filtered$ethnicity)
+```
+
+## Group by ancestry and sex #
+```{r}
+afr <- filter(abcdData_baseline_C4_filtered, ethnicity == "AFR")
+latinx <- filter(abcdData_baseline_C4_filtered, ethnicity == "Latinx")
+eur <- filter(abcdData_baseline_C4_filtered, ethnicity == "EUR")
+
+male <- filter(abcdData_baseline_C4_filtered, sex == "M")
+female <- filter(abcdData_baseline_C4_filtered, sex == "F")
+```
+
+## WBV, surface area, cortical thickness #
+```{r}
+which(colnames(abcdData_baseline_C4_filtered) == "smri_vol_scs_wholeb")  # 569
+which(colnames(abcdData_baseline_C4_filtered) == "mrisdp_453")  # 570
+which(colnames(abcdData_baseline_C4_filtered) == "mrisdp_151")  # 571
+
+# Association by ancestry
+datalist <- list(abcdData_baseline_C4_filtered, afr, latinx, eur)
+names(datalist) <- c("abcdData_baseline_C4_filtered", "afr", "latinx", "eur")
+
+for (j in 1:length(datalist)) {
+  df <- data.frame() 
+  print(names(datalist)[j])
+  for (i in 569:571) {
+    this_var = datalist[[j]][, i]
+    mod0 <- lmer(as.matrix(this_var) ~ c4b_expression + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    mod1 <- lmer(as.matrix(this_var) ~ c4a_expression + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    mod2 <- lmer(as.matrix(this_var) ~ c4a_expression + c4b_expression + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    p1 <- anova(mod0, mod2)
+    p2 <- anova(mod1, mod2)
+    df <- rbind(df, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(mod2),
+                               beta_C4A = summary(mod2)$coefficients[2, 1],
+                               beta_C4B = summary(mod2)$coefficients[3, 1],
+                               stderr_C4A = summary(mod2)$coefficients[2, 2],
+                               stderr_C4B = summary(mod2)$coefficients[3, 2],
+                               P_C4A = p1[2, 8],
+                               P_C4B = p2[2, 8]))
+  }
+    df$fdr_C4A = p.adjust(df$P_C4A,'fdr')
+    df$fdr_C4B = p.adjust(df$P_C4B,'fdr')
+    print(df)
+}
+
+# Association by sex
+datalist <- list(female, male)
+names(datalist) <- c("female", "male")
+
+for (j in 1:length(datalist)) {
+  df <- data.frame() 
+  print(names(datalist)[j])
+  for (i in 569:571) {
+    this_var = datalist[[j]][, i]
+    mod0 <- lmer(as.matrix(this_var) ~ c4b_expression + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + 
+                   + (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    mod1 <- lmer(as.matrix(this_var) ~ c4a_expression + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + 
+                   + (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    mod2 <- lmer(as.matrix(this_var) ~ c4a_expression + c4b_expression + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + 
+                   + (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    p1 <- anova(mod0, mod2)
+    p2 <- anova(mod1, mod2)
+    df <- rbind(df, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(mod2),
+                               beta_C4A = summary(mod2)$coefficients[2, 1],
+                               beta_C4B = summary(mod2)$coefficients[3, 1],
+                               stderr_C4A = summary(mod2)$coefficients[2, 2],
+                               stderr_C4B = summary(mod2)$coefficients[3, 2],
+                               P_C4A = p1[2, 8],
+                               P_C4B = p2[2, 8]))
+  }
+    df$fdr_C4A = p.adjust(df$P_C4A,'fdr')
+    df$fdr_C4B = p.adjust(df$P_C4B,'fdr')
+    print(df)
+}
+```
+
+## WBV, surface area, cortical thickness - sex interaction #
+```{r}
+which(colnames(abcdData_baseline_C4_filtered) == "smri_vol_scs_wholeb")  # 569
+which(colnames(abcdData_baseline_C4_filtered) == "mrisdp_453")  # 570
+which(colnames(abcdData_baseline_C4_filtered) == "mrisdp_151")  # 571
+
+# Association by ancestry
+datalist <- list(abcdData_baseline_C4_filtered)
+names(datalist) <- c("abcdData_baseline_C4_filtered")
+
+for (j in 1:length(datalist)) {
+  df <- data.frame() 
+  print(names(datalist)[j])
+  for (i in 569:571) {
+    this_var = datalist[[j]][, i]
+    mod0 <- lmer(as.matrix(this_var) ~ c4a_expression + c4b_expression * sex + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + 
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    mod1 <- lmer(as.matrix(this_var) ~ c4b_expression + c4a_expression * sex + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + 
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    mod2 <- lmer(as.matrix(this_var) ~ c4a_expression * sex + c4b_expression * sex +
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + 
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    p1 <- anova(mod0, mod2)
+    p2 <- anova(mod1, mod2)
+    df <- rbind(df, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(mod2),
+                               beta_C4A = summary(mod2)$coefficients[11, 1],
+                               beta_C4B = summary(mod2)$coefficients[12, 1],
+                               stderr_C4A = summary(mod2)$coefficients[11, 2],
+                               stderr_C4B = summary(mod2)$coefficients[12, 2],
+                               P_C4A = p1[2, 8],
+                               P_C4B = p2[2, 8]))
+  }
+    df$fdr_C4A = p.adjust(df$P_C4A,'fdr')
+    df$fdr_C4B = p.adjust(df$P_C4B,'fdr')
+    print(df)
+}
+```
+
+## Cortical thickness - All #
+```{r}
+bl <- colorRampPalette(c("navy","royalblue","lightskyblue"))(200)                       
+re <- colorRampPalette(c("mistyrose", "red2","darkred"))(200)
+trans <- yarrr::transparent("blue", trans.val = 1)
+
+which(colnames(abcdData_baseline_C4_filtered) == "smri_thick_cdk_bankssts") #2557
+which(colnames(abcdData_baseline_C4_filtered) == "smri_thick_cdk_insula") #2590
+
+# Association - multiethnic cohort
+datalist <- list(abcdData_baseline_C4_filtered)
+names(datalist) <- c("abcdData_baseline_C4_filtered")
+
+for (j in 1:length(datalist)) {
+  df <- data.frame() 
+  print(names(datalist)[j])
+  for (i in 2557:2590) {
+    this_var = datalist[[j]][, i]
+    mod0 <- lmer(as.matrix(this_var) ~ c4b_expression + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + mrisdp_151 +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    mod1 <- lmer(as.matrix(this_var) ~ c4a_expression + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + mrisdp_151 +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    mod2 <- lmer(as.matrix(this_var) ~ c4a_expression + c4b_expression + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + mrisdp_151 +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    p1 <- anova(mod0, mod2)
+    p2 <- anova(mod1, mod2)
+    df <- rbind(df, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(mod2),
+                               beta_C4A = summary(mod2)$coefficients[2, 1],
+                               beta_C4B = summary(mod2)$coefficients[3, 1],
+                               stderr_C4A = summary(mod2)$coefficients[2, 2],
+                               stderr_C4B = summary(mod2)$coefficients[3, 2],
+                               P_C4A = p1[2, 8],
+                               P_C4B = p2[2, 8]))
+    
+  }
+  
+df$fdr_C4A = p.adjust(df$P_C4A,'fdr')
+df$fdr_C4B = p.adjust(df$P_C4B,'fdr')
+print(df)
+}
+```
+
+## Surface area - All #
+```{r}
+bl <- colorRampPalette(c("navy","royalblue","lightskyblue"))(200)                       
+re <- colorRampPalette(c("mistyrose", "red2","darkred"))(200)
+trans <- yarrr::transparent("blue", trans.val = 1)
+
+which(colnames(abcdData_baseline_C4_filtered) == "smri_area_cdk_bankssts") #2591
+which(colnames(abcdData_baseline_C4_filtered) == "smri_area_cdk_insula") #2624
+
+# Association - multiethnic cohort
+datalist <- list(abcdData_baseline_C4_filtered)
+names(datalist) <- c("abcdData_baseline_C4_filtered")
+
+for (j in 1:length(datalist)) {
+  df <- data.frame() 
+  print(names(datalist)[j])
+  for (i in 2591:2624) {
+    this_var = datalist[[j]][, i]
+    mod0 <- lmer(as.matrix(this_var) ~ c4b_expression + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + mrisdp_453 +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    mod1 <- lmer(as.matrix(this_var) ~ c4a_expression + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + mrisdp_453 +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    mod2 <- lmer(as.matrix(this_var) ~ c4a_expression + c4b_expression + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + mrisdp_453 +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    p1 <- anova(mod0, mod2)
+    p2 <- anova(mod1, mod2)
+    df <- rbind(df, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(mod2),
+                               beta_C4A = summary(mod2)$coefficients[2, 1],
+                               beta_C4B = summary(mod2)$coefficients[3, 1],
+                               stderr_C4A = summary(mod2)$coefficients[2, 2],
+                               stderr_C4B = summary(mod2)$coefficients[3, 2],
+                               P_C4A = p1[2, 8],
+                               P_C4B = p2[2, 8]))
+  }
+
+df$fdr_C4A = p.adjust(df$P_C4A,'fdr')
+df$fdr_C4B = p.adjust(df$P_C4B,'fdr')
+print(df)
+}
+```
+
+## Plot sex interaction #
+```{r}
+sjplot_pal(pal = "breakfast club")
+
+interaction.mod <- lmer(smri_area_cdk_ehinal ~ c4a_expression*sex + c4b_expression*sex + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + mrisdp_453 +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = abcdData_baseline_C4_filtered, REML = FALSE)
+my.plot <- plot_model(interaction.mod, type = "pred", terms = c("c4a_expression", "sex"), colors = c("springgreen4", "slateblue1"))
+my.plot1 <- my.plot + labs(x="Predicted C4A Expression", y = "Entorhinal Cortex Surface Area (mm2)", fill = "Sex") + 
+  ggtitle("") +
+  theme_classic() 
+ggsave(my.plot1, file = '../results/Figure3_Regression_C4A.Entorhinal.Sex.pdf', device = cairo_pdf, width = 5, height=3, units = 'in')
+```
+
+## Volume - All #
+```{r}
+bl <- colorRampPalette(c("navy","royalblue","lightskyblue"))(200)                       
+re <- colorRampPalette(c("mistyrose", "red2","darkred"))(200)
+trans <- yarrr::transparent("blue", trans.val = 1)
+
+which(colnames(abcdData_baseline_C4_filtered) == "smri_vol_scs_cbwmatter") #2625
+which(colnames(abcdData_baseline_C4_filtered) == "smri_vol_scs_pallidum") #2633
+which(colnames(abcdData_baseline_C4_filtered) == "smri_vol_scs_3rdventricle") #543
+which(colnames(abcdData_baseline_C4_filtered) == "smri_vol_scs_bstem") #545
+which(colnames(abcdData_baseline_C4_filtered) == "smri_vol_scs_hpus") #2634
+which(colnames(abcdData_baseline_C4_filtered) == "smri_vol_scs_amygdala") #2635
+which(colnames(abcdData_baseline_C4_filtered) == "smri_vol_scs_csf") #548
+which(colnames(abcdData_baseline_C4_filtered) == "smri_vol_scs_aal") #549
+which(colnames(abcdData_baseline_C4_filtered) == "smri_vol_scs_vedc") #2636
+which(colnames(abcdData_baseline_C4_filtered) == "smri_vol_scs_ccps") #564
+which(colnames(abcdData_baseline_C4_filtered) == "smri_vol_scs_ccat") #568
+
+# Association - multiethnic cohort
+datalist <- list(abcdData_baseline_C4_filtered)
+names(datalist) <- c("abcdData_baseline_C4_filtered")
+
+for (j in 1:length(datalist)) {
+  df <- data.frame() 
+  print(names(datalist)[j])
+  for (i in c(2625:2633, 543:545, 2634:2635, 548:549, 2636, 564:568)) {
+    this_var = datalist[[j]][, i]
+    mod0 <- lmer(as.matrix(this_var) ~ c4b_expression + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + smri_vol_scs_wholeb +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    mod1 <- lmer(as.matrix(this_var) ~ c4a_expression + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + smri_vol_scs_wholeb +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    mod2 <- lmer(as.matrix(this_var) ~ c4a_expression + c4b_expression + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + smri_vol_scs_wholeb +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = datalist[[j]], REML = FALSE)
+    p1 <- anova(mod0, mod2)
+    p2 <- anova(mod1, mod2)
+    df <- rbind(df, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(mod2),
+                               beta_C4A = summary(mod2)$coefficients[2, 1],
+                               beta_C4B = summary(mod2)$coefficients[3, 1],
+                               stderr_C4A = summary(mod2)$coefficients[2, 2],
+                               stderr_C4B = summary(mod2)$coefficients[3, 2],
+                               P_C4A = p1[2, 8],
+                               P_C4B = p2[2, 8]))
+  }
+
+df$fdr_C4A = p.adjust(df$P_C4A,'fdr')
+df$fdr_C4B = p.adjust(df$P_C4B,'fdr')
+print(df)
+}
+```
+
+## Get longitudinal data #  
+```{r}
+## Year 1
+abcdData_Y1 <- abcdData %>% filter(eventname == "1_year_follow_up_y_arm_1")
+abcdData_Y1 %>% group_by(ethnicity) %>% tally() 
+
+abcdData_Y1_C4 <- abcdData_Y1 %>% filter(!is.na(c4a_total))
+abcdData_Y1_C4 %>% group_by(ethnicity) %>% tally() 
+
+abcdData_Y1_C4_filtered <- abcdData_Y1_C4 %>% filter(ethnicity %in% c("AFR", "AMR", "EUR"))
+abcdData_Y1_C4_filtered %>% group_by(ethnicity) %>% tally() 
+
+abcdData_Y1_C4_filtered <- abcdData_Y1_C4_filtered %>%
+  filter(c4_allele1_structure %in% c("AL","AL-AL","AL-BL", "AL-BS", "BS"))
+abcdData_Y1_C4_filtered <- abcdData_Y1_C4_filtered %>%
+  filter(c4_allele2_structure %in% c("AL","AL-AL","AL-BL", "AL-BS", "BS"))
+
+abcdData_Y1_C4_filtered %>% group_by(rel_family_id) %>% tally() %>% arrange(desc(n)) 
+
+afr.Y1 <- filter(abcdData_Y1_C4_filtered, ethnicity == "AFR")
+amr.Y1 <- filter(abcdData_Y1_C4_filtered, ethnicity == "AMR")
+eur.Y1 <- filter(abcdData_Y1_C4_filtered, ethnicity == "EUR")
+
+male.Y1 <- filter(abcdData_Y1_C4_filtered, sex == "M")
+female.Y1 <- filter(abcdData_Y1_C4_filtered, sex == "F")
+
+
+## Year 2
+abcdData_Y2 <- abcdData %>% filter(eventname == "2_year_follow_up_y_arm_1")
+abcdData_Y2 %>% group_by(ethnicity) %>% tally() 
+
+abcdData_Y2_C4 <- abcdData_Y2 %>% filter(!is.na(c4a_total))
+abcdData_Y2_C4 %>% group_by(ethnicity) %>% tally() 
+
+abcdData_Y2_C4_filtered <- abcdData_Y2_C4 %>% filter(ethnicity %in% c("AFR", "AMR", "EUR"))
+abcdData_Y2_C4_filtered %>% group_by(ethnicity) %>% tally() 
+
+abcdData_Y2_C4_filtered <- abcdData_Y2_C4_filtered %>%
+  filter(c4_allele1_structure %in% c("AL","AL-AL","AL-BL", "AL-BS", "BS"))
+abcdData_Y2_C4_filtered <- abcdData_Y2_C4_filtered %>%
+  filter(c4_allele2_structure %in% c("AL","AL-AL","AL-BL", "AL-BS", "BS"))
+
+abcdData_Y2_C4_filtered %>% group_by(rel_family_id) %>% tally() %>% arrange(desc(n))  
+
+afr.Y2 <- filter(abcdData_Y2_C4_filtered, ethnicity == "AFR")
+amr.Y2 <- filter(abcdData_Y2_C4_filtered, ethnicity == "AMR")
+eur.Y2 <- filter(abcdData_Y2_C4_filtered, ethnicity == "EUR")
+
+male.Y2 <- filter(abcdData_Y2_C4_filtered, sex == "M")
+female.Y2 <- filter(abcdData_Y2_C4_filtered, sex == "F")
+```
+
+## Get baseline  smri_area_cdk_ehinal  to add to longitudinal #
+```{r}
+## Baseline brain data
+abcdData_baseline_C4_filtered_brain <- dplyr::select(abcdData_baseline_C4_filtered, subjectkey, smri_area_cdk_ehinal, interview_age, mrisdp_453)
+
+abcdData_baseline_C4_filtered_brain$smri_area_cdk_ehinal_baseline <- abcdData_baseline_C4_filtered_brain$smri_area_cdk_ehinal
+abcdData_baseline_C4_filtered_brain$interview_age_baseline <- abcdData_baseline_C4_filtered_brain$interview_age
+abcdData_baseline_C4_filtered_brain$mrisdp_453_baseline <- abcdData_baseline_C4_filtered_brain$mrisdp_453
+
+abcdData_baseline_C4_filtered_brain <- dplyr::select(abcdData_baseline_C4_filtered_brain, subjectkey, smri_area_cdk_ehinal_baseline, interview_age_baseline, mrisdp_453_baseline)
+
+male <- merge(male, abcdData_baseline_C4_filtered_brain, by = 'subjectkey')
+female <- merge(female, abcdData_baseline_C4_filtered_brain, by = 'subjectkey')
+
+abcdData_Y1_C4_filtered <- merge(abcdData_Y1_C4_filtered, abcdData_baseline_C4_filtered_brain, by = 'subjectkey')
+afr.Y1 <- merge(afr.Y1, abcdData_baseline_C4_filtered_brain, by = 'subjectkey')
+amr.Y1 <- merge(amr.Y1, abcdData_baseline_C4_filtered_brain, by = 'subjectkey')
+eur.Y1 <- merge(eur.Y1, abcdData_baseline_C4_filtered_brain, by = 'subjectkey')
+male.Y1 <- merge(male.Y1, abcdData_baseline_C4_filtered_brain, by = 'subjectkey')
+female.Y1 <- merge(female.Y1, abcdData_baseline_C4_filtered_brain, by = 'subjectkey')
+
+
+abcdData_Y2_C4_filtered <- merge(abcdData_Y2_C4_filtered, abcdData_baseline_C4_filtered_brain, by = 'subjectkey')
+afr.Y2 <- merge(afr.Y2, abcdData_baseline_C4_filtered_brain, by = 'subjectkey')
+amr.Y2 <- merge(amr.Y2, abcdData_baseline_C4_filtered_brain, by = 'subjectkey')
+eur.Y2 <- merge(eur.Y2, abcdData_baseline_C4_filtered_brain, by = 'subjectkey')
+male.Y2 <- merge(male.Y2, abcdData_baseline_C4_filtered_brain, by = 'subjectkey')
+female.Y2 <- merge(female.Y2, abcdData_baseline_C4_filtered_brain, by = 'subjectkey')
+```
+  
+## Plot baseline ENT SA #
+```{r}
+my.plot <- ggplot(abcdData_baseline_C4_filtered, aes(x = smri_area_cdk_ehinal, y = sex)) + 
+  stat_density_ridges(quantile_lines = TRUE, quantiles = c(0.25, 0.75), scale = 0.9, aes(fill = sex), alpha = 0.6) +
+  scale_fill_manual(values = c("springgreen4","slateblue1")) +
+  labs(x="Entorhinal Cortex SA at Baseline", y="Sex") +
+  theme(legend.position = "none") +
+  scale_y_discrete(expand = c(0, 0)) +
+  scale_x_continuous(expand = c(0, 0))
+my.plot1 <- my.plot + coord_flip() # save 10 x 3
+ggsave(my.plot1, file = '../results/Figure3_Distribution_Entorhinal.Baseline.Sex.pdf', device = cairo_pdf, width = 3, height=10, units = 'in')
+```
+
+## 1-Year Follow-up - ENT SA #
+```{r}
+## Year 1 follow-up
+
+# Male
+quantile(male.Y1$smri_area_cdk_ehinal_baseline, na.rm = TRUE) #Small.25%=363.0, Large75%=464.0
+nrow(male.Y1[male.Y1$smri_area_cdk_ehinal_baseline>=464.0, ]) 
+nrow(male.Y1[male.Y1$smri_area_cdk_ehinal_baseline<=363.0, ]) 
+
+BigBrain <- subset(male.Y1, smri_area_cdk_ehinal_baseline>=464.0)
+BigBrain$Size <- "Top 25%"
+  
+SmallBrain <- subset(male.Y1, smri_area_cdk_ehinal_baseline<=363.0)
+SmallBrain$Size <- "Bottom 25%"
+
+mean <- mean(BigBrain$pps_y_ss_number, na.rm=TRUE)
+sd <- sd(BigBrain$pps_y_ss_number, na.rm=TRUE)
+se <- std.error(BigBrain$pps_y_ss_number, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_number, SmallBrain$pps_y_ss_number, conf.int = TRUE, conf.level = 0.95)
+p <- wilcox$p.value
+wilcox$conf.int
+big.df.male.number <- data.frame(mean, se, p)
+big.df.male.number$Sex <- "Male"
+big.df.male.number$Size <- "Top 25%"
+big.df.male.number$Variable <- "Number of Events"
+
+mean <- mean(SmallBrain$pps_y_ss_number, na.rm=TRUE)
+sd <- sd(SmallBrain$pps_y_ss_number, na.rm=TRUE)
+se <- std.error(SmallBrain$pps_y_ss_number, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_number, SmallBrain$pps_y_ss_number, conf.int = TRUE, conf.level = 0.95)
+p <- wilcox$p.value
+wilcox$conf.int
+small.df.male.number <- data.frame(mean, se, p)
+small.df.male.number$Sex <- "Male"
+small.df.male.number$Size <- "Bottom 25%"
+small.df.male.number$Variable <- "Number of Events"
+
+mean <- mean(BigBrain$pps_y_ss_severity_score, na.rm=TRUE)
+sd <- sd(BigBrain$pps_y_ss_severity_score, na.rm=TRUE)
+se <- std.error(BigBrain$pps_y_ss_severity_score, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_severity_score, SmallBrain$pps_y_ss_severity_score, conf.int = TRUE, conf.level = 0.95)
+p <- wilcox$p.value
+wilcox$conf.int
+big.df.male.severity <- data.frame(mean, se, p)
+big.df.male.severity$Sex <- "Male"
+big.df.male.severity$Size <- "Top 25%"
+big.df.male.severity$Variable <- "Severity of Events"
+
+mean <- mean(SmallBrain$pps_y_ss_severity_score, na.rm=TRUE)
+sd <- sd(SmallBrain$pps_y_ss_severity_score, na.rm=TRUE)
+se <- std.error(SmallBrain$pps_y_ss_severity_score, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_severity_score, SmallBrain$pps_y_ss_severity_score, conf.int = TRUE, conf.level = 0.95)
+p <- wilcox$p.value
+small.df.male.severity <- data.frame(mean, se, p)
+small.df.male.severity$Sex <- "Male"
+small.df.male.severity$Size <- "Bottom 25%"
+small.df.male.severity$Variable <- "Severity of Events"
+
+df.male.number <- rbind(big.df.male.number, small.df.male.number)
+df.male.severity <- rbind(big.df.male.severity, small.df.male.severity)
+df.male.big.small <- rbind (BigBrain, SmallBrain)
+
+male.iqr.number <- df.male.big.small %>%
+  group_by(Size) %>%
+  get_summary_stats(pps_y_ss_number, type = "median_iqr") 
+print(male.iqr.number)
+
+male.test.number <- df.male.big.small %>% 
+  wilcox_test(pps_y_ss_number ~ Size) %>%
+  add_significance()
+print(male.test.number)
+
+print(df.male.big.small %>% wilcox_effsize(pps_y_ss_number ~ Size))
+
+male.iqr.severity <- df.male.big.small %>%
+  group_by(Size) %>%
+  get_summary_stats(pps_y_ss_severity_score, type = "median_iqr")
+print(male.iqr.severity)
+
+male.test.severity <- df.male.big.small %>% 
+  wilcox_test(pps_y_ss_severity_score ~ Size) %>%
+  add_significance()
+print(male.test.severity)
+
+print(df.male.big.small %>% wilcox_effsize(pps_y_ss_severity_score ~ Size))
+
+# Female
+quantile(female.Y1$smri_area_cdk_ehinal_baseline, na.rm = TRUE) #Small.25%=321.0 , Large75%=408.0
+nrow(female.Y1[female.Y1$smri_area_cdk_ehinal_baseline>=408.0, ]) 
+nrow(female.Y1[female.Y1$smri_area_cdk_ehinal_baseline<=321.0 , ]) 
+
+BigBrain <- subset(female.Y1, smri_area_cdk_ehinal_baseline>=408.0)
+BigBrain$Size <- "Top 25%"
+  
+SmallBrain <- subset(female.Y1, smri_area_cdk_ehinal_baseline<=321.0 )
+SmallBrain$Size <- "Bottom 25%"
+
+mean <- mean(BigBrain$pps_y_ss_number, na.rm=TRUE)
+sd <- sd(BigBrain$pps_y_ss_number, na.rm=TRUE)
+se <- std.error(BigBrain$pps_y_ss_number, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_number, SmallBrain$pps_y_ss_number, conf.int = TRUE, conf.level = 0.95)
+p <- wilcox$p.value
+big.df.female.number <- data.frame(mean, se, p)
+big.df.female.number$Sex <- "Female"
+big.df.female.number$Size <- "Top 25%"
+big.df.female.number$Variable <- "Number of Events"
+
+mean <- mean(SmallBrain$pps_y_ss_number, na.rm=TRUE)
+sd <- sd(SmallBrain$pps_y_ss_number, na.rm=TRUE)
+se <- std.error(SmallBrain$pps_y_ss_number, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_number, SmallBrain$pps_y_ss_number, conf.int = TRUE, conf.level = 0.95)
+p <- wilcox$p.value
+small.df.female.number <- data.frame(mean, se, p)
+small.df.female.number$Sex <- "Female"
+small.df.female.number$Size <- "Bottom 25%"
+small.df.female.number$Variable <- "Number of Events"
+
+mean <- mean(BigBrain$pps_y_ss_severity_score, na.rm=TRUE)
+sd <- sd(BigBrain$pps_y_ss_severity_score, na.rm=TRUE)
+se <- std.error(BigBrain$pps_y_ss_severity_score, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_severity_score, SmallBrain$pps_y_ss_severity_score, conf.int = TRUE, conf.level = 0.95)
+p <- wilcox$p.value
+big.df.female.severity <- data.frame(mean, se, p)
+big.df.female.severity$Sex <- "Female"
+big.df.female.severity$Size <- "Top 25%"
+big.df.female.severity$Variable <- "Severity of Events"
+
+mean <- mean(SmallBrain$pps_y_ss_severity_score, na.rm=TRUE)
+sd <- sd(SmallBrain$pps_y_ss_severity_score, na.rm=TRUE)
+se <- std.error(SmallBrain$pps_y_ss_severity_score, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_severity_score, SmallBrain$pps_y_ss_severity_score, conf.int = TRUE, conf.level = 0.95)
+p <- wilcox$p.value
+small.df.female.severity <- data.frame(mean, se, p)
+small.df.female.severity$Sex <- "Female"
+small.df.female.severity$Size <- "Bottom 25%"
+small.df.female.severity$Variable <- "Severity of Events"
+
+df.female.number <- rbind(big.df.female.number, small.df.female.number)
+df.female.severity <- rbind(big.df.female.severity, small.df.female.severity)
+df.female.big.small <- rbind (BigBrain, SmallBrain)
+
+female.iqr.number <- df.female.big.small %>%
+  group_by(Size) %>%
+  get_summary_stats(pps_y_ss_number, type = "median_iqr") 
+print(female.iqr.number)
+
+female.test.number <- df.female.big.small %>% 
+  wilcox_test(pps_y_ss_number ~ Size) %>%
+  add_significance()
+print(female.test.number)
+
+print(df.female.big.small %>% wilcox_effsize(pps_y_ss_number ~ Size))
+
+female.iqr.severity <- df.female.big.small %>%
+  group_by(Size) %>%
+  get_summary_stats(pps_y_ss_severity_score, type = "median_iqr")
+print(female.iqr.severity)
+
+female.test.severity <- df.female.big.small %>% 
+  wilcox_test(pps_y_ss_severity_score ~ Size) %>%
+  add_significance()
+print(female.test.severity)
+
+print(df.female.big.small %>% wilcox_effsize(pps_y_ss_severity_score ~ Size))
+
+# Combine
+df.number <- rbind(df.male.number, df.female.number)
+df.severity <- rbind(df.male.severity, df.female.severity)
+df.year1 <- rbind(df.number, df.severity)
+```
+
+## 2-Year Follow-up - ENT SA #
+```{r}
+## Year 2 follow-up
+
+# Male
+quantile(male.Y2$smri_area_cdk_ehinal_baseline, na.rm = TRUE) #Small.25%=363.0, Large75%=464.75
+nrow(male.Y2[male.Y2$smri_area_cdk_ehinal_baseline>=464.75, ]) 
+nrow(male.Y2[male.Y2$smri_area_cdk_ehinal_baseline<=363.0, ]) 
+
+BigBrain <- subset(male.Y2, smri_area_cdk_ehinal_baseline>=464.75)
+BigBrain$Size <- "Top 25%"
+  
+SmallBrain <- subset(male.Y2, smri_area_cdk_ehinal_baseline<=363.0)
+SmallBrain$Size <- "Bottom 25%"
+
+mean <- mean(BigBrain$pps_y_ss_number, na.rm=TRUE)
+sd <- sd(BigBrain$pps_y_ss_number, na.rm=TRUE)
+se <- std.error(BigBrain$pps_y_ss_number, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_number, SmallBrain$pps_y_ss_number)
+p <- wilcox$p.value
+big.df.male.number <- data.frame(mean, se, p)
+big.df.male.number$Sex <- "Male"
+big.df.male.number$Size <- "Top 25%"
+big.df.male.number$Variable <- "Number of Events"
+
+mean <- mean(SmallBrain$pps_y_ss_number, na.rm=TRUE)
+sd <- sd(SmallBrain$pps_y_ss_number, na.rm=TRUE)
+se <- std.error(SmallBrain$pps_y_ss_number, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_number, SmallBrain$pps_y_ss_number)
+p <- wilcox$p.value
+small.df.male.number <- data.frame(mean, se, p)
+small.df.male.number$Sex <- "Male"
+small.df.male.number$Size <- "Bottom 25%"
+small.df.male.number$Variable <- "Number of Events"
+
+mean <- mean(BigBrain$pps_y_ss_severity_score, na.rm=TRUE)
+sd <- sd(BigBrain$pps_y_ss_severity_score, na.rm=TRUE)
+se <- std.error(BigBrain$pps_y_ss_severity_score, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_severity_score, SmallBrain$pps_y_ss_severity_score)
+p <- wilcox$p.value
+big.df.male.severity <- data.frame(mean, se, p)
+big.df.male.severity$Sex <- "Male"
+big.df.male.severity$Size <- "Top 25%"
+big.df.male.severity$Variable <- "Severity of Events"
+
+mean <- mean(SmallBrain$pps_y_ss_severity_score, na.rm=TRUE)
+sd <- sd(SmallBrain$pps_y_ss_severity_score, na.rm=TRUE)
+se <- std.error(SmallBrain$pps_y_ss_severity_score, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_severity_score, SmallBrain$pps_y_ss_severity_score)
+p <- wilcox$p.value
+small.df.male.severity <- data.frame(mean, se, p)
+small.df.male.severity$Sex <- "Male"
+small.df.male.severity$Size <- "Bottom 25%"
+small.df.male.severity$Variable <- "Severity of Events"
+
+df.male.number <- rbind(big.df.male.number, small.df.male.number)
+df.male.severity <- rbind(big.df.male.severity, small.df.male.severity)
+df.male.big.small <- rbind (BigBrain, SmallBrain)
+
+male.iqr.number <- df.male.big.small %>%
+  group_by(Size) %>%
+  get_summary_stats(pps_y_ss_number, type = "median_iqr") 
+print(male.iqr.number)
+
+male.test.number <- df.male.big.small %>% 
+  wilcox_test(pps_y_ss_number ~ Size) %>%
+  add_significance()
+print(male.test.number)
+
+print(df.male.big.small %>% wilcox_effsize(pps_y_ss_number ~ Size))
+
+male.iqr.severity <- df.male.big.small %>%
+  group_by(Size) %>%
+  get_summary_stats(pps_y_ss_severity_score, type = "median_iqr")
+print(male.iqr.severity)
+
+male.test.severity <- df.male.big.small %>% 
+  wilcox_test(pps_y_ss_severity_score ~ Size) %>%
+  add_significance()
+print(male.test.severity)
+
+print(df.male.big.small %>% wilcox_effsize(pps_y_ss_severity_score ~ Size))
+
+
+# Female
+quantile(female.Y2$smri_area_cdk_ehinal_baseline, na.rm = TRUE) #Small.25%=320.500 , Large75%=408.625
+nrow(female.Y2[female.Y2$smri_area_cdk_ehinal_baseline>=408.625, ]) 
+nrow(female.Y2[female.Y2$smri_area_cdk_ehinal_baseline<=320.500 , ]) 
+
+BigBrain <- subset(female.Y2, smri_area_cdk_ehinal_baseline>=408.625)
+BigBrain$Size <- "Top 25%"
+  
+SmallBrain <- subset(female.Y2, smri_area_cdk_ehinal_baseline<=320.500 )
+SmallBrain$Size <- "Bottom 25%"
+
+mean <- mean(BigBrain$pps_y_ss_number, na.rm=TRUE)
+sd <- sd(BigBrain$pps_y_ss_number, na.rm=TRUE)
+se <- std.error(BigBrain$pps_y_ss_number, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_number, SmallBrain$pps_y_ss_number)
+p <- wilcox$p.value
+big.df.female.number <- data.frame(mean, se, p)
+big.df.female.number$Sex <- "Female"
+big.df.female.number$Size <- "Top 25%"
+big.df.female.number$Variable <- "Number of Events"
+
+mean <- mean(SmallBrain$pps_y_ss_number, na.rm=TRUE)
+sd <- sd(SmallBrain$pps_y_ss_number, na.rm=TRUE)
+se <- std.error(SmallBrain$pps_y_ss_number, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_number, SmallBrain$pps_y_ss_number)
+p <- wilcox$p.value
+small.df.female.number <- data.frame(mean, se, p)
+small.df.female.number$Sex <- "Female"
+small.df.female.number$Size <- "Bottom 25%"
+small.df.female.number$Variable <- "Number of Events"
+
+mean <- mean(BigBrain$pps_y_ss_severity_score, na.rm=TRUE)
+sd <- sd(BigBrain$pps_y_ss_severity_score, na.rm=TRUE)
+se <- std.error(BigBrain$pps_y_ss_severity_score, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_severity_score, SmallBrain$pps_y_ss_severity_score)
+p <- wilcox$p.value
+big.df.female.severity <- data.frame(mean, se, p)
+big.df.female.severity$Sex <- "Female"
+big.df.female.severity$Size <- "Top 25%"
+big.df.female.severity$Variable <- "Severity of Events"
+
+mean <- mean(SmallBrain$pps_y_ss_severity_score, na.rm=TRUE)
+sd <- sd(SmallBrain$pps_y_ss_severity_score, na.rm=TRUE)
+se <- std.error(SmallBrain$pps_y_ss_severity_score, na.rm=TRUE)
+wilcox <- wilcox.test(BigBrain$pps_y_ss_severity_score, SmallBrain$pps_y_ss_severity_score)
+p <- wilcox$p.value
+small.df.female.severity <- data.frame(mean, se, p)
+small.df.female.severity$Sex <- "Female"
+small.df.female.severity$Size <- "Bottom 25%"
+small.df.female.severity$Variable <- "Severity of Events"
+
+df.female.number <- rbind(big.df.female.number, small.df.female.number)
+df.female.severity <- rbind(big.df.female.severity, small.df.female.severity)
+df.female.big.small <- rbind (BigBrain, SmallBrain)
+
+female.iqr.number <- df.female.big.small %>%
+  group_by(Size) %>%
+  get_summary_stats(pps_y_ss_number, type = "median_iqr") 
+print(female.iqr.number)
+
+female.test.number <- df.female.big.small %>% 
+  wilcox_test(pps_y_ss_number ~ Size) %>%
+  add_significance()
+print(female.test.number)
+
+print(df.female.big.small %>% wilcox_effsize(pps_y_ss_number ~ Size))
+
+female.iqr.severity <- df.female.big.small %>%
+  group_by(Size) %>%
+  get_summary_stats(pps_y_ss_severity_score, type = "median_iqr")
+print(female.iqr.severity)
+
+female.test.severity <- df.female.big.small %>% 
+  wilcox_test(pps_y_ss_severity_score ~ Size) %>%
+  add_significance()
+print(female.test.severity)
+
+print(df.female.big.small %>% wilcox_effsize(pps_y_ss_severity_score ~ Size))
+
+# Combine
+df.number <- rbind(df.male.number, df.female.number)
+df.severity <- rbind(df.male.severity, df.female.severity)
+df.year2 <- rbind(df.number, df.severity)
+```
+
+## Plot by year #
+```{r}
+df.year1$year <- "1-Year Follow-Up"
+df.year2$year <- "2-Year Follow-Up"
+df.year1.year2 <- rbind(df.year1, df.year2)
+df.number.of.events <- df.year1.year2[c(1:4, 9:12),]
+df.severity.of.events <- df.year1.year2[c(5:8, 13:16),]
+
+# Plot 
+my.plot <- ggplot(df.number.of.events, aes(x=Size, y=mean, fill=Size)) + 
+  scale_y_continuous(breaks = c(0, 1, 2)) +
+  geom_bar(stat="identity", color="black", position=position_dodge()) +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=.2,position=position_dodge(.9)) 
+my.plot1 <- my.plot + theme_classic() + labs(x="Baseline Entorhinal Cortex Surface Area", y = "Psychosis Symptoms", fill = "SA Quartile") +
+  scale_fill_manual(values=c('#999999','white')) + facet_grid(Sex~year) +
+  geom_text(aes(label = format(mean, digits = 2), y = 0.7)) + theme(legend.position="left")
+my.plot1
+ggsave(my.plot1, file = '../results/Figure3_Bar_PLEnumber.Entorhinal.Sex.pdf', device = cairo_pdf, width = 6.5, height=3.5, units = 'in')
+
+my.plot <- ggplot(df.severity.of.events, aes(x=Size, y=mean, fill=Size)) + 
+  geom_bar(stat="identity", color="black", position=position_dodge()) +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=.2,position=position_dodge(.9)) 
+my.plot1 <- my.plot + theme_classic() + labs(x="Baseline Entorhinal Cortex Surface Area", y = "Psychosis Symptoms", fill = "SA Quartile") +
+  scale_fill_manual(values=c('#999999','white')) + facet_grid(Sex~year) +
+  geom_text(aes(label = format(mean, digits = 2), y = 0.7)) + theme(legend.position="left")
+my.plot1
+ggsave(my.plot1, file = '../results/Figure3_Bar_PLEseverity.Entorhinal.Sex.pdf', device = cairo_pdf, width = 6.5, height=3.5, units = 'in')
+```

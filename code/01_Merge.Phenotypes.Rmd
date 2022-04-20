@@ -1,0 +1,534 @@
+---
+title: "01_Merge.Phenotypes"
+output: html_document
+---
+
+## Install packages #
+```{r}
+options(stringsAsFactors = FALSE)
+
+library(tidyverse)
+```
+
+## Load raw data from ABCD text files #
+```{r}
+## Set working directory #
+setwd("../ABCD/Release3.0/raw_data")
+
+## Sex, age, site
+Longit_Tracking <- read.delim("abcd_lt01.txt",  header = TRUE, na.strings = c("", "NA"))
+Longit_Tracking <- Longit_Tracking[-c(1), ] 
+abcdData <- dplyr::select(Longit_Tracking, subjectkey, eventname, sex, interview_date, interview_age, site_id_l)
+abcdData$subjectkey <- as.factor(abcdData$subjectkey)
+abcdData$eventname <- as.factor(abcdData$eventname)
+abcdData$eventname = factor(abcdData$eventname, levels=c('baseline_year_1_arm_1','6_month_follow_up_arm_1','1_year_follow_up_y_arm_1','18_month_follow_up_arm_1', '2_year_follow_up_y_arm_1', '30_month_follow_up_arm_1'))
+abcdData$sex <- as.factor(abcdData$sex)
+abcdData$interview_age <- as.numeric(abcdData$interview_age)
+abcdData$site_id_l <- as.factor(abcdData$site_id_l)
+hist(abcdData$interview_age)
+rm("Longit_Tracking")
+
+## Family relationships
+Relatedness <- read.delim("acspsw03.txt",  header = TRUE, na.strings = c("", "NA"))
+Relatedness <- Relatedness[-c(1), ]
+Relatedness <- select(Relatedness, subjectkey, eventname, rel_family_id, race_ethnicity)
+Relatedness$rel_family_id <- as.factor(Relatedness$rel_family_id )
+Relatedness$race_ethnicity <- as.factor(Relatedness$race_ethnicity)
+abcdData <- merge(abcdData, Relatedness, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("Relatedness")
+
+## Socioeconomic status
+Demographics_ParentReport <- read.delim("pdem02.txt",  header = TRUE, na.strings = c("", "NA"))
+Demographics_ParentReport <- Demographics_ParentReport[-c(1), ] 
+Demographics_ParentReport <- select(Demographics_ParentReport, subjectkey, eventname, demo_prnt_ed_v2, demo_comb_income_v2)
+Demographics_ParentReport[Demographics_ParentReport ==777] <- NA
+Demographics_ParentReport[Demographics_ParentReport ==999] <- NA
+Demographics_ParentReport$ses_AvgIncomeParentEdu <- ((as.numeric(Demographics_ParentReport$demo_comb_income_v2) + as.numeric(Demographics_ParentReport$demo_prnt_ed_v2))/2)
+hist(Demographics_ParentReport$ses_AvgIncomeParentEdu)
+Demographics_ParentReport <- select(Demographics_ParentReport, subjectkey, eventname, ses_AvgIncomeParentEdu)
+abcdData <- merge(abcdData, Demographics_ParentReport, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("Demographics_ParentReport")
+
+## Pubertal development and sleep
+PhysicalHealth_ParentReport <- read.delim("abcd_ssphp01.txt",  header = TRUE, na.strings = c("", "NA"))
+PhysicalHealth_ParentReport <- PhysicalHealth_ParentReport[-c(1), ]
+PhysicalHealth_ParentReport <- dplyr::select(PhysicalHealth_ParentReport, subjectkey, eventname, sds_p_ss_dims, sds_p_ss_sbd, sds_p_ss_da, sds_p_ss_swtd, sds_p_ss_does, sds_p_ss_shy, sds_p_ss_total, pds_p_ss_male_category_2, pds_p_ss_female_category_2)
+cols.num <- c("sds_p_ss_dims", "sds_p_ss_sbd", "sds_p_ss_da", "sds_p_ss_swtd", "sds_p_ss_does", "sds_p_ss_shy", "sds_p_ss_total", "pds_p_ss_male_category_2", "pds_p_ss_female_category_2")
+PhysicalHealth_ParentReport[cols.num] <- sapply(PhysicalHealth_ParentReport[cols.num],as.numeric)
+sapply(PhysicalHealth_ParentReport, class)
+abcdData <- merge(abcdData, PhysicalHealth_ParentReport, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("PhysicalHealth_ParentReport")
+
+## Chronotype
+Chronotype <- read.delim("abcd_mcqc01.txt",  header = TRUE, na.strings = c("", "NA"))
+Chronotype <- Chronotype[-c(1), ]
+Chronotype <- dplyr::select(Chronotype, subjectkey, eventname, 	mctq_sd_min_to_sleep_calc, 	mctq_sd_min_to_get_up_calc, 	mctq_fd_min_to_sleep_calc, mctq_fd_min_to_get_up_calc, 70:85)
+cols.num <- c(3:22)
+Chronotype[cols.num] <- sapply(Chronotype[cols.num],as.numeric)
+abcdData <- merge(abcdData, Chronotype, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("Chronotype")
+
+## Hormone data
+Salimetrics <- read.delim("abcd_hsss01.txt",  header = TRUE, na.strings = c("", "NA"))
+Salimetrics <- Salimetrics[-c(1), ]
+Salimetrics <- dplyr::select(Salimetrics, subjectkey, eventname, hormone_scr_dhea_mean, hormone_scr_hse_mean, hormone_scr_ert_mean)
+Salimetrics$hormone_scr_dhea_mean <- as.numeric(Salimetrics$hormone_scr_dhea_mean)
+Salimetrics$hormone_scr_hse_mean <- as.numeric(Salimetrics$hormone_scr_hse_mean)
+Salimetrics$hormone_scr_ert_mean <- as.numeric(Salimetrics$hormone_scr_ert_mean)
+abcdData <- merge(abcdData, Salimetrics, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("Salimetrics")
+
+## Child behavior checklist
+CBCL <- read.delim("abcd_cbcls01.txt",  header = TRUE, na.strings = c("", "NA"))
+CBCL <- dplyr::select(CBCL, subjectkey, eventname, cbcl_scr_syn_anxdep_r, cbcl_scr_syn_withdep_r, cbcl_scr_syn_somatic_r, cbcl_scr_syn_social_r, cbcl_scr_syn_thought_r, cbcl_scr_syn_attention_r, cbcl_scr_syn_rulebreak_r, cbcl_scr_syn_aggressive_r, cbcl_scr_syn_internal_r, cbcl_scr_syn_external_r, cbcl_scr_syn_totprob_r, cbcl_scr_dsm5_depress_r, cbcl_scr_dsm5_anxdisord_r, cbcl_scr_dsm5_somaticpr_r, cbcl_scr_dsm5_adhd_r, cbcl_scr_dsm5_opposit_r, cbcl_scr_dsm5_conduct_r, cbcl_scr_07_sct_r, cbcl_scr_07_ocd_r, cbcl_scr_07_stress_r, cbcl_scr_syn_anxdep_t, cbcl_scr_syn_withdep_t, cbcl_scr_syn_somatic_t, cbcl_scr_syn_social_t, cbcl_scr_syn_thought_t, cbcl_scr_syn_attention_t, cbcl_scr_syn_rulebreak_t, cbcl_scr_syn_aggressive_t, cbcl_scr_syn_internal_t, cbcl_scr_syn_external_t, cbcl_scr_syn_totprob_t, cbcl_scr_dsm5_depress_t, cbcl_scr_dsm5_anxdisord_t, cbcl_scr_dsm5_somaticpr_t, cbcl_scr_dsm5_adhd_t, cbcl_scr_dsm5_opposit_t, cbcl_scr_dsm5_conduct_t, cbcl_scr_07_sct_t, cbcl_scr_07_ocd_t, cbcl_scr_07_stress_t)
+abcdData <- merge(abcdData, CBCL, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("CBCL")
+
+## DSM-5 Full KSADS-5 - Parent
+KSAD_Parent <- read.delim("abcd_ksad01.txt",  header = TRUE, na.strings = c("", "NA"))
+KSAD_Parent <- KSAD_Parent[-c(1), ]
+KSAD_Parent <- dplyr::select(KSAD_Parent, subjectkey, eventname, ksads_1_843_p, ksads_1_845_p, 	ksads_1_844_p, ksads_1_840_p, ksads_1_841_p, ksads_1_842_p, ksads_1_847_p, ksads_1_846_p, 	ksads_2_837_p, ksads_2_835_p, ksads_2_836_p, ksads_2_831_p, ksads_2_832_p, ksads_2_830_p, ksads_2_833_p, ksads_2_834_p, ksads_2_839_p, ksads_2_838_p, ksads_3_848_p, ksads_4_851_p, ksads_4_852_p, ksads_4_826_p, ksads_4_827_p, ksads_4_829_p, ksads_4_828_p, ksads_4_850_p, ksads_4_849_p, ksads_5_906_p, ksads_5_907_p, 	ksads_5_857_p, ksads_5_858_p, ksads_6_859_p, ksads_6_860_p, ksads_7_861_p, 	ksads_7_909_p, ksads_7_910_p, ksads_7_862_p, 	ksads_8_864_p	, ksads_8_863_p, ksads_8_912_p, ksads_8_911_p, ksads_9_868_p, ksads_9_867_p, ksads_10_914_p, ksads_10_913_p, ksads_10_869_p, ksads_10_870_p, ksads_11_917_p, ksads_11_918_p, ksads_11_919_p, ksads_11_920_p, ksads_12_928_p, ksads_12_927_p, ksads_12_925_p, ksads_12_926_p, 309:324, 347:350, ksads_15_901_p, ksads_15_902_p, 425:428, ksads_17_905_p, ksads_17_904_p, ksads_18_903_p, 472:475, 508:529, 894:915, 	ksads_24_968_p, ksads_24_967_p, ksads_25_916_p, ksads_25_915_p, ksads_25_866_p, ksads_25_865_p) 
+KSAD_Parent[KSAD_Parent ==555] <- NA
+KSAD_Parent[KSAD_Parent ==888] <- NA
+cols.num <- c(3:140)
+KSAD_Parent[cols.num] <- sapply(KSAD_Parent[cols.num],as.numeric)
+abcdData <- merge(abcdData, KSAD_Parent, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("KSAD_Parent")
+
+## DSM-5 Full KSADS-5 - Child
+KSAD_Child <- read.delim("abcd_ksad501.txt",  header = TRUE, na.strings = c("", "NA"))
+KSAD_Child <- KSAD_Child[-c(1), ]
+KSAD_Child <- dplyr::select(KSAD_Child, subjectkey, eventname, 809:953)
+KSAD_Child[KSAD_Child ==555] <- NA
+KSAD_Child[KSAD_Child ==888] <- NA
+cols.num <- c(3:147)
+KSAD_Child[cols.num] <- sapply(KSAD_Child[cols.num],as.numeric)
+abcdData <- merge(abcdData, KSAD_Child, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("KSAD_Child")
+
+## Latent factors for 1. economic, social, and physiological well-being, 2. youth perceived social support, 3. perinatal health
+LatentHealth <- read.delim("abcd_sss01.txt",  header = TRUE, na.strings = c("", "NA"))
+LatentHealth <- LatentHealth[-c(1), ]
+LatentHealth <- dplyr::select(LatentHealth, subjectkey, eventname, latent_factor_ss_general_ses, latent_factor_ss_social, latent_factor_ss_perinatal) 
+cols.num <- c(3:5)
+LatentHealth[cols.num] <- sapply(LatentHealth[cols.num],as.numeric)
+abcdData <- merge(abcdData, LatentHealth, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("LatentHealth")
+
+## BRIEF - Teacher report
+BRIEF_Teacher <- read.delim("abcd_ssbpmtf01.txt",  header = TRUE, na.strings = c("", "NA"))
+BRIEF_Teacher <- BRIEF_Teacher[-c(1), ]
+BRIEF_Teacher <- dplyr::select(BRIEF_Teacher, subjectkey, eventname, bpm_t_scr_attention_r,  bpm_t_scr_internal_r, bpm_t_scr_external_r, bpm_t_scr_totalprob_r, bpm_t_scr_attention_t, bpm_t_scr_internal_t,  bpm_t_scr_external_t, bpm_t_scr_totalprob_t) 
+cols.num <- c(3:10)
+BRIEF_Teacher[cols.num] <- sapply(BRIEF_Teacher[cols.num],as.numeric)
+abcdData <- merge(abcdData, BRIEF_Teacher, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("BRIEF_Teacher")
+
+## Parent mental health questionnaires summary scores: Parent General Behavior Inventory-Mania (PGBI), SRS, PhenX Early Adolescent Temperament, GISH
+Parent_SS_MentalHealth <- read.delim("abcd_mhp02.txt",  header = TRUE, na.strings = c("", "NA"))
+Parent_SS_MentalHealth <- Parent_SS_MentalHealth[-c(1), ]
+Parent_SS_MentalHealth <- dplyr::select(Parent_SS_MentalHealth, subjectkey, eventname, pgbi_p_ss_score, ssrs_p_ss_sum, eatq_p_ss_attention, 	eatq_p_ss_depressive_mood, eatq_p_ss_effort_cont_ss, 	eatq_p_ss_fear, eatq_p_ss_frustration, eatq_p_ss_inhibitory, 	eatq_p_ss_activation, 	eatq_p_ss_neg_affect_ss, 	eatq_p_ss_shyness, 	eatq_p_ss_surgency, eatq_p_ss_surgency_ss, eatq_p_ss_aggression)
+cols.num <- c(3:16)
+Parent_SS_MentalHealth[cols.num] <- sapply(Parent_SS_MentalHealth[cols.num],as.numeric)
+abcdData <- merge(abcdData, Parent_SS_MentalHealth, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("Parent_SS_MentalHealth")
+
+## Child mental health questionnaires summary scores: Prodromal psychosis, UPPS, BIS/BAS, Delinquincy, 7-up Mania, GISH
+Child_SS_MentalHealth <- read.delim("abcd_mhy02.txt",  header = TRUE, na.strings = c("", "NA"))
+Child_SS_MentalHealth <- Child_SS_MentalHealth[-c(1), ]
+Child_SS_MentalHealth <- dplyr::select(Child_SS_MentalHealth, subjectkey, eventname, pps_y_ss_number, pps_y_ss_severity_score, upps_y_ss_negative_urgency, upps_y_ss_lack_of_planning, upps_y_ss_sensation_seeking, 	upps_y_ss_positive_urgency, upps_y_ss_lack_of_perseverance, bis_y_ss_bis_sum, bis_y_ss_bas_rr, bis_y_ss_bas_drive, bis_y_ss_bas_fs, delq_y_ss_sum, sup_y_ss_sum)
+cols.num <- c(3:15)
+Child_SS_MentalHealth[cols.num] <- sapply(Child_SS_MentalHealth[cols.num],as.numeric)
+abcdData <- merge(abcdData, Child_SS_MentalHealth, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("Child_SS_MentalHealth")
+
+## NIH Toolobx
+NIH_Toolbox <- read.delim("abcd_tbss01.txt",  header = TRUE, na.strings = c("", "NA"))
+NIH_Toolbox <- NIH_Toolbox[-c(1), ]
+NIH_Toolbox <- dplyr::select(NIH_Toolbox, subjectkey, eventname, nihtbx_picvocab_fc, nihtbx_flanker_fc, nihtbx_list_fc, nihtbx_cardsort_fc, nihtbx_pattern_fc, nihtbx_picture_fc, nihtbx_reading_fc, nihtbx_fluidcomp_fc, nihtbx_cryst_fc, 	nihtbx_totalcomp_fc)
+cols.num <- c(3:12)
+NIH_Toolbox[cols.num] <- sapply(NIH_Toolbox[cols.num],as.numeric)
+abcdData <- merge(abcdData, NIH_Toolbox, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("NIH_Toolbox")
+
+## MRI device
+MRI_Device <- read.delim("abcd_mri01.txt",  header = TRUE, na.strings = c("", "NA"))
+MRI_Device <- MRI_Device[-c(1), ]
+MRI_Device <- dplyr::select(MRI_Device, subjectkey, eventname, mri_info_deviceserialnumber)
+MRI_Device$mri_info_deviceserialnumber <- as.factor(MRI_Device$mri_info_deviceserialnumber)
+MRI_Device <- MRI_Device[!is.na(MRI_Device$mri_info_deviceserialnumber), ]
+abcdData <- merge(abcdData, MRI_Device, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("MRI_Device")
+
+## MRI QC
+MRI_QC <- read.delim("abcd_imgincl01.txt",  header = TRUE, na.strings = c("", "NA"))
+MRI_QC <- MRI_QC[-c(1), ]
+MRI_QC <- dplyr::select(MRI_QC, subjectkey, eventname, 11:17)
+abcdData <- merge(abcdData, MRI_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+
+## Structural MRI
+## Part 1
+sMRI_Part1 <- read.delim("abcd_smrip101.txt",  header = TRUE, na.strings = c("", "NA"))
+sMRI_Part1 <- sMRI_Part1[-c(1), ]
+sMRI_Part1 <- dplyr::select(sMRI_Part1, subjectkey, eventname, 11:78, 225:292, 332:399)
+sMRI_Part1_QC <- merge(sMRI_Part1, MRI_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+sMRI_Part1_QC <- sMRI_Part1_QC %>% filter(imgincl_t1w_include != "0")
+sMRI_Part1_QC <- dplyr::select(sMRI_Part1_QC, 1:206)
+sMRI_Part1_QC[3:206] <- lapply(sMRI_Part1_QC[3:206], as.numeric)
+abcdData <- merge(abcdData, sMRI_Part1_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("sMRI_Part1")
+rm("sMRI_Part1_QC")
+## Part 2
+sMRI_Part2 <- read.delim("abcd_smrip201.txt",  header = TRUE, na.strings = c("", "NA"))
+sMRI_Part2 <- sMRI_Part2[-c(1), ]
+sMRI_Part2 <- dplyr::select(sMRI_Part2, subjectkey, eventname, 330:344, 346:358, 360:361, 365:370)
+sMRI_Part2_QC <- merge(sMRI_Part2, MRI_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+sMRI_Part2_QC <- sMRI_Part2_QC %>% filter(imgincl_t1w_include != "0")
+sMRI_Part2_QC <- dplyr::select(sMRI_Part2_QC, 1:38)
+sMRI_Part2_QC[3:38] <- lapply(sMRI_Part2_QC[3:38], as.numeric)
+abcdData <- merge(abcdData, sMRI_Part2_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("sMRI_Part2")
+rm("sMRI_Part2_QC")
+## Part 3
+sMRI_Part3 <- read.delim("abcd_mrisdp101.txt",  header = TRUE, na.strings = c("", "NA"))
+sMRI_Part3 <- sMRI_Part3[-c(1), ]
+sMRI_Part3 <- dplyr::select(sMRI_Part3, subjectkey, eventname, mrisdp_453, mrisdp_151)
+sMRI_Part3_QC <- merge(sMRI_Part3, MRI_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+sMRI_Part3_QC <- sMRI_Part3_QC %>% filter(imgincl_t1w_include != "0")
+sMRI_Part3_QC <- dplyr::select(sMRI_Part3_QC, 1:4)
+sMRI_Part3_QC[3:4] <- lapply(sMRI_Part3_QC[3:4], as.numeric)
+abcdData <- merge(abcdData, sMRI_Part3_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("sMRI_Part3")
+rm("sMRI_Part3_QC")
+
+## Resting state MRI
+fMRI_GordonNetworkParcellations <- read.delim("abcd_betnet02.txt",  header = TRUE, na.strings = c("", "NA"))
+fMRI_GordonNetworkParcellations <- fMRI_GordonNetworkParcellations[-c(1), ]
+fMRI_GordonNetworkParcellations <- dplyr::select(fMRI_GordonNetworkParcellations, subjectkey, eventname, rsfmri_c_ngd_meantrans, rsfmri_c_ngd_meanrot, 23:35, 37:48, 51:61, 65:74, 79:87, 93:100, 107:113, 121:126, 135:139, 149:152, 163:165, 177:178, 191)
+fMRI_GordonNetworkParcellations_QC <- merge(fMRI_GordonNetworkParcellations, MRI_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+fMRI_GordonNetworkParcellations_QC <- fMRI_GordonNetworkParcellations_QC %>% filter(imgincl_rsfmri_include != "0")
+fMRI_GordonNetworkParcellations_QC <- dplyr::select(fMRI_GordonNetworkParcellations_QC, 1:95)
+fMRI_GordonNetworkParcellations_QC[3:95] <- lapply(fMRI_GordonNetworkParcellations_QC[3:95], as.numeric)
+abcdData <- merge(abcdData, fMRI_GordonNetworkParcellations_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("fMRI_GordonNetworkParcellations")
+rm("fMRI_GordonNetworkParcellations_QC")
+
+## Diffusion tensor imaging
+## Part 1
+dMRI_DTI_Part1_FullShell <- read.delim("abcd_dmdtifp101.txt",  header = TRUE, na.strings = c("", "NA"))
+dMRI_DTI_Part1_FullShell <- dMRI_DTI_Part1_FullShell[-c(1), ]
+dMRI_DTI_Part1_FullShell <- dplyr::select(dMRI_DTI_Part1_FullShell, subjectkey, eventname, 10:51, 52:93)
+dMRI_DTI_Part1_FullShell_QC <- merge(dMRI_DTI_Part1_FullShell, MRI_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+dMRI_DTI_Part1_FullShell_QC <- dMRI_DTI_Part1_FullShell_QC %>% filter(imgincl_dmri_include != "0")
+dMRI_DTI_Part1_FullShell_QC <- dplyr::select(dMRI_DTI_Part1_FullShell_QC, 1:86)
+dMRI_DTI_Part1_FullShell_QC[3:86] <- lapply(dMRI_DTI_Part1_FullShell_QC[3:86], as.numeric)
+abcdData <- merge(abcdData, dMRI_DTI_Part1_FullShell_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("dMRI_DTI_Part1_FullShell")
+rm("dMRI_DTI_Part1_FullShell_QC")
+##Part2
+dMRI_DTI_Part2_FullShell <- read.delim("abcd_dmdtifp202.txt",  header = TRUE, na.strings = c("", "NA"))
+dMRI_DTI_Part2_FullShell <- dMRI_DTI_Part2_FullShell[-c(1), ]
+dMRI_DTI_Part2_FullShell <- dplyr::select(dMRI_DTI_Part2_FullShell, subjectkey, eventname, 226:228)
+dMRI_DTI_Part2_FullShell_QC <- merge(dMRI_DTI_Part2_FullShell, MRI_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+dMRI_DTI_Part2_FullShell_QC <- dMRI_DTI_Part2_FullShell_QC %>% filter(imgincl_dmri_include != "0")
+dMRI_DTI_Part2_FullShell_QC <- dplyr::select(dMRI_DTI_Part2_FullShell_QC, 1:5)
+dMRI_DTI_Part2_FullShell_QC[3:5] <- lapply(dMRI_DTI_Part2_FullShell_QC[3:5], as.numeric)
+abcdData <- merge(abcdData, dMRI_DTI_Part2_FullShell_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("dMRI_DTI_Part2_FullShell")
+rm("dMRI_DTI_Part2_FullShell_QC")
+
+## Restriction spectrum imaging
+## Part 1
+RSI_Part1 <- read.delim("mri_rsi_p102.txt",  header = TRUE, na.strings = c("", "NA"))
+RSI_Part1 <- RSI_Part1[-c(1), ]
+RSI_Part1 <- dplyr::select(RSI_Part1, subjectkey, eventname, 11:13, 51:55, 14:50, 93:97, 56:92, 135:139, 98:134, 177:181, 140:176, 219:223, 182:218, 261:265, 224:260, 308:487, 627:629, 488:626, 698:700, 630:697, 769:771, 701:768, 840:842, 772:839, 911:913, 843:910)
+RSI_Part1_QC <- merge(RSI_Part1, MRI_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+RSI_Part1_QC <- RSI_Part1_QC %>% filter(imgincl_dmri_include != "0")
+RSI_Part1_QC <- dplyr::select(RSI_Part1_QC, 1:863)
+RSI_Part1_QC[3:863] <- lapply(RSI_Part1_QC[3:863], as.numeric)
+abcdData <- merge(abcdData, RSI_Part1_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("RSI_Part1")
+rm("RSI_Part1_QC")
+## Part 2
+RSI_Part2 <- read.delim("mri_rsi_p202.txt",  header = TRUE, na.strings = c("", "NA"))
+RSI_Part2 <- RSI_Part2[-c(1), ]
+RSI_Part2 <- dplyr::select(RSI_Part2, subjectkey, eventname, 77:79, 9:76, 148:150, 80:147, 219:221, 151:218, 290:292, 222:289, 361:363, 293:360, 432:434, 364:431, 503:505, 435:502, 574:576, 506:573, 645:647, 577:644, 716:718, 648:715, 787:789, 719:786, 858:860, 790:857)
+RSI_Part2_QC <- merge(RSI_Part2, MRI_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+RSI_Part2_QC <- RSI_Part2_QC %>% filter(imgincl_dmri_include != "0")
+RSI_Part2_QC <- dplyr::select(RSI_Part2_QC, 1:854)
+RSI_Part2_QC[3:854] <- lapply(RSI_Part2_QC[3:854], as.numeric)
+abcdData <- merge(abcdData, RSI_Part2_QC, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("RSI_Part2")
+rm("RSI_Part2_QC")
+rm("MRI_QC")
+```
+
+## Generate binary psychosis grouping variable based on Bearden/Mennigen code #
+```{r, error=TRUE}
+## Set working directory #
+setwd("../ABCD/Release3.0/raw_data")
+
+## Load questionnaires
+KSAD_Parent <- read.delim("abcd_ksad01.txt",  header = TRUE, na.strings = c("", "NA"))
+KSAD_Parent <- KSAD_Parent[-c(1), ]
+ksads_schizophrenia <- dplyr::select(KSAD_Parent, subjectkey, eventname, starts_with("ksads_4_"))
+
+ProdromalPsych <- read.delim("pps01.txt", header = TRUE)
+ProdromalPsych <- ProdromalPsych[-c(1), ]
+ProdromalPsych <- ProdromalPsych %>% rename(eventname = visit)
+
+## Merge
+PQ_ksads_match <- merge(ProdromalPsych, ksads_schizophrenia, by = c("subjectkey", "eventname"), all.x = TRUE)
+PQ_ksads_match[10:117] <- lapply(PQ_ksads_match[10:117], as.numeric)
+rm("KSAD_Parent")
+rm("ProdromalPsych")
+
+
+PQ_ksads_match <- PQ_ksads_match %>% mutate(ksads_severity = ifelse(ksads_4_245_p == 1 | ksads_4_246_p == 1 | ksads_4_247_p == 1 | ksads_4_256_p == 1 | ksads_4_257_p == 1, 1, 0))
+PQ_ksads_match <- PQ_ksads_match %>% mutate(ksads_no_sleep_rel = ifelse(ksads_4_239_p == 1 | ksads_4_240_p == 1, 1, 0)) 
+PQ_ksads_match <- PQ_ksads_match %>% mutate(ksads_no_drugs_hall = ifelse(ksads_4_243_p == 0 | ksads_4_244_p == 0, 1, 0))
+PQ_ksads_match <- PQ_ksads_match %>% mutate(ksads_no_drugs_del = ifelse(ksads_4_254_p == 0 | ksads_4_255_p == 0, 1, 0))
+PQ_ksads_match <- PQ_ksads_match %>% mutate(ksads_sever_no_excl = ifelse(ksads_severity == 1 & ksads_no_sleep_rel == 1 | is.na(ksads_no_sleep_rel == TRUE) & ksads_no_drugs_hall == 1 | 
+                                                                           is.na(ksads_no_drugs_hall == TRUE) & ksads_no_drugs_del == 1 | is.na(ksads_no_drugs_del == TRUE), 1, 0))
+PQ_ksads_match <- PQ_ksads_match %>% mutate(ksads_symptoms = ifelse(ksads_4_16_p == 1 | ksads_4_17_p == 1 | ksads_4_18_p == 1 | ksads_4_19_p == 1 | ksads_4_230_p == 1 | ksads_4_231_p == 1 | 
+                                                                      ksads_4_232_p == 1 | ksads_4_233_p == 1 | ksads_4_235_p == 1 | ksads_4_236_p == 1 | ksads_4_241_p == 1 | ksads_4_242_p == 1 | 
+                                                                      ksads_4_248_p == 1 | ksads_4_249_p == 1 | ksads_4_250_p == 1 | ksads_4_251_p == 1 | ksads_4_252_p == 1 | ksads_4_253_p == 1 | 
+                                                                      ksads_4_258_p == 1 | ksads_4_259_p == 1, 1, 0))
+PQ_ksads_match <- PQ_ksads_match %>% mutate(ksads_psychosis = ifelse(ksads_sever_no_excl == 1 & ksads_symptoms == 1, 1, 0))
+
+PQ_ksads_match$PQ_total_score <- rowSums(PQ_ksads_match[,c("prodromal_1_y","prodromal_2_y", "prodromal_3_y", "prodromal_4_y", "prodromal_5_y", 
+                                                           "prodromal_6_y", "prodromal_7_y", "prodromal_8_y", "prodromal_9_y", "prodromal_10_y",
+                                                           "prodromal_11_y", "prodromal_12_y", "prodromal_13_y", "prodromal_14_y", "prodromal_15_y",
+                                                           "prodromal_16_y", "prodromal_17_y", "prodromal_18_y", "prodromal_19_y", "prodromal_20_y",
+                                                           "prodromal_21_y")], na.rm = TRUE)
+
+summary(PQ_ksads_match$PQ_total_score)
+hist(PQ_ksads_match$PQ_total_score[PQ_ksads_match$PQ_total_score != 0], xlab = "PQ total score")
+
+PQ_ksads_match$PQ_distress_score <- rowSums(PQ_ksads_match[,c("prodromal_1b_y","prodromal_2b_y", "prodromal_3b_y", "prodromal_4b_y", "prodromal_5b_y", 
+                                                              "prodromal_6b_y", "prodromal_7b_y", "prodromal_8b_y", "prodromal_9b_y", "prodromal_10b_y",
+                                                              "prodromal_11b_y", "prodromal_12b_y", "prodromal_13b_y", "prodromal_14b_y", "prodromal_15b_y",
+                                                              "prodromal_16b_y", "prodromal_17b_y", "prodromal_18b_y", "prodromal_19b_y", "prodromal_20b_y",
+                                                              "prodromal_21b_y")], na.rm = TRUE)
+summary(PQ_ksads_match$PQ_distress_score)
+hist(PQ_ksads_match$PQ_distress_score[PQ_ksads_match$PQ_distress_score != 0], xlab = "PQ distress score")
+
+
+PQ_ksads_match <- PQ_ksads_match %>% mutate(PQ_psychosis = ifelse(PQ_total_score > 1 & PQ_distress_score > 6, 1, 0))
+PQ_ksads_match <- PQ_ksads_match %>% mutate(Psychosis = ifelse(PQ_psychosis == 1 | ksads_psychosis == 1, 1, 0))
+
+PQ_ksads_match$PQ_susp_score <- rowSums(PQ_ksads_match[,c("prodromal_1_y", "prodromal_4_y", "prodromal_5_y", 
+                                                           "prodromal_7_y", "prodromal_8_y", "prodromal_11_y", "prodromal_12_y", "prodromal_13_y", "prodromal_14_y", "prodromal_15_y",
+                                                           "prodromal_16_y", "prodromal_17_y", "prodromal_18_y")], na.rm = TRUE)
+summary(PQ_ksads_match$PQ_susp_score)
+hist(PQ_ksads_match$PQ_susp_score[PQ_ksads_match$PQ_susp_score != 0], xlab = "PQ suspiciousness score")
+
+PQ_ksads_match$PQ_susp_distress_score <- rowSums(PQ_ksads_match[,c("prodromal_1b_y", "prodromal_4b_y", "prodromal_5b_y", 
+                                                              "prodromal_7b_y", "prodromal_8b_y", "prodromal_11b_y", "prodromal_12b_y", "prodromal_13b_y", "prodromal_14b_y", "prodromal_15b_y",
+                                                              "prodromal_16b_y", "prodromal_17b_y", "prodromal_18b_y")], na.rm = TRUE)
+
+summary(PQ_ksads_match$PQ_susp_distress_score)
+hist(PQ_ksads_match$PQ_susp_distress_score[PQ_ksads_match$PQ_susp_distress_score != 0], xlab = "PQ suspiciousness distress score")
+
+PQ_ksads_match <- PQ_ksads_match %>% mutate(PQ_suspiciousness_psychosis = ifelse(PQ_susp_score > 3 & PQ_susp_distress_score > 6, 1, 0))
+table(PQ_ksads_match$PQ_suspiciousness_psychosis)
+
+PQ_ksads_match <- PQ_ksads_match %>% mutate(Psychosis_wPQ_susp = ifelse(PQ_suspiciousness_psychosis == 1 | ksads_psychosis == 1, 1, 0))
+PQ_ksads_match$Psychosis_wPQ_susp <- as.factor(PQ_ksads_match$Psychosis_wPQ_susp)
+table(PQ_ksads_match$Psychosis_wPQ_susp)
+
+PQ_ksads_match <- dplyr::select(PQ_ksads_match, subjectkey, eventname, Psychosis_wPQ_susp)
+
+# Merge
+abcdData <- merge(abcdData, PQ_ksads_match, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("PQ_ksads_match")
+rm("ksads_schizophrenia")
+```
+
+## Find columns with all NAs #
+```{r, error=TRUE}
+
+## Create Function
+na.test <-  function (x) {
+    w <- sapply(x, function(x)all(is.na(x)))
+    if (any(w)) {
+        stop(paste("All NA in columns", paste(which(w), collapse=", ")))
+    }
+}
+
+## Apply to data
+na.test(abcdData)
+```
+
+## Remove columns with all NAs #
+```{r}
+abcdData <- abcdData[ -c(133, 134, 135, 136, 163, 164, 216, 217, 218, 219, 220, 221, 222, 223, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 259, 260, 261, 262, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304, 309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 361, 362) ]
+```
+
+## KSADS-COMP: Remove KSADS data with incorrect algorithm scores/diagnoses #
+```{r}
+abcdData <- abcdData[ , -which(names(abcdData) %in% c("ksads_1_840_t","ksads_1_841_t", "ksads_1_842_t", "ksads_1_840_p","ksads_1_841_p", "ksads_1_842_p", "ksads_1_843_t", "ksads_1_844_t", "ksads_1_845_t", "ksads_1_843_p", "ksads_1_844_p", "ksads_1_845_p", "ksads_3_848_t", "ksads_3_848_p", "ksads_14_853_p", "ksads_14_854_p", "ksads_14_855_p", "ksads_14_856_p", "ksads_6_859_p", "ksads_6_860_p", "ksads_13_929_t", "ksads_13_930_t", "ksads_13_931_t", "ksads_13_932_t", "ksads_13_933_t", "ksads_13_934_t","ksads_13_929_p", "ksads_13_930_p", "ksads_13_931_p", "ksads_13_932_p", "ksads_13_933_p", "ksads_13_934_p", "ksads_18_903_p"))]
+```
+
+## Load C4 text file and merge #
+```{r}
+## Set working directory #
+setwd("../data")
+ABCD.C4.imputed.multiethnic <- read.delim("ABCD.C4.imputed.multiethnic.txt",  header = TRUE, na.strings = c("", "NA"))
+ABCD.C4.imputed.multiethnic$eventname <- "baseline_year_1_arm_1"
+abcdData <- merge(abcdData, ABCD.C4.imputed.multiethnic, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("ABCD.C4.imputed.multiethnic")
+```
+
+## Load ancestry data #
+```{r}
+## Set working directory #
+setwd("../data")
+ancestry.pcs <- read.delim("ABCD.ancestry.knn.UpdateIDs.txt",  header = TRUE, na.strings = c("", "NA"))
+ancestry.pcs$eventname <- "baseline_year_1_arm_1"
+abcdData <- merge(abcdData, ancestry.pcs, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("ancestry.pcs")
+```
+
+## Fill in variables (i.e., those collected at just one time point) by subject #
+```{r}
+fill_var <- c("rel_family_id", "race_ethnicity", "ses_AvgIncomeParentEdu", "ssrs_p_ss_sum", "c4a_total", "c4b_total", "c4herv_total", "c4a_dosage", "c4b_dosage", "avg_dosage", "c4_allele1_structure", "c4_allele2_structure", "c4a_expression", "c4b_expression", "pc1", "pc2", "pc3", "pc4", "pc5", "pc6", "pc7", "pc8", "pc9", "pc10", "pc11", "pc12", "pc13", "pc14", "pc15", "pc16", "pc17", "pc18", "pc19", "pc20", "data", "ethnicity")
+
+for(i in fill_var){
+abcdData <- abcdData %>%
+  dplyr::group_by(subjectkey) %>%
+  fill(i, .direction = "downup") %>%
+  dplyr::ungroup()
+}
+```
+
+## Psychosis #
+```{r}
+abcdData$pps_y_ss_number_plus1 <- (1 + abcdData$pps_y_ss_number)
+abcdData$pps_y_ss_severity_score_plus1 <- (1 + abcdData$pps_y_ss_severity_score)
+```
+
+## Merge PRS #
+```{r}
+prs_no_mhc <- read.delim("../data/SCZ.PRS.NoMHC",  header = TRUE, na.strings = c("", "NA"))
+prs_no_mhc <- dplyr::select(prs_no_mhc, subjectkey, PRS.SCZ.CLOZUK.NoMHC)
+
+prs_one_mhc <- read.delim("../data/SCZ.PRS.OneMHC",  header = TRUE, na.strings = c("", "NA"))
+prs_one_mhc <- dplyr::select(prs_one_mhc, subjectkey, PRS.SCZ.CLOZUK.OneMHC)
+
+hist(prs_no_mhc$PRS.SCZ.CLOZUK.NoMHC)
+hist(prs_one_mhc$PRS.SCZ.CLOZUK.OneMHC)
+
+abcdData <- merge(abcdData, prs_no_mhc, by = c("subjectkey"), all.x = TRUE)
+abcdData <- merge(abcdData, prs_one_mhc, by = c("subjectkey"), all.x = TRUE)
+```
+
+## Additional PheWAS variables
+```{r}
+setwd("../ABCD/Release3.0/raw_data")
+Anthro <- read.delim("abcd_ant01.txt",  header = TRUE, na.strings = c("", "NA"))
+Anthro <- Anthro[-c(1), ] 
+Anthro <- dplyr::select(Anthro, subjectkey, eventname, anthroheightcalc, 	anthroweightcalc, anthro_waist_cm)
+cols.num <- c(3:5)
+Anthro[cols.num] <- sapply(Anthro[cols.num],as.numeric)
+hist(Anthro$anthroheightcalc)
+hist(Anthro$anthroweightcalc)
+hist(Anthro$anthro_waist_cm)
+abcdData <- merge(abcdData, Anthro, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("Anthro")
+
+Med_Hist <- read.delim("abcd_medhxss01.txt",  header = TRUE, na.strings = c("", "NA"))
+Med_Hist <- Med_Hist[-c(1), ] 
+Med_Hist <- dplyr::select(Med_Hist, subjectkey, eventname, medhx_ss_4b_p, medhx_ss_5b_p, medhx_ss_6a_times_p, medhx_ss_6b_times_p, medhx_ss_6c_times_p, medhx_ss_6d_times_p, medhx_ss_6e_times_p, 	medhx_ss_6f_times_p, medhx_ss_6g_times_p, medhx_ss_6h_times_p, medhx_ss_6i_times_p, medhx_ss_6j_times_p, medhx_ss_6k_times_p, medhx_ss_6l_times_p, medhx_ss_6m_times_p, medhx_ss_6n_times_p, medhx_ss_6o_times_p, 	medhx_ss_6p_times_p, medhx_ss_6q_times_p, 	medhx_ss_6r_times_p, medhx_ss_6s_times_p, medhx_ss_9b_p)
+cols.num <- c(3:24)
+Med_Hist[cols.num] <- sapply(Med_Hist[cols.num],as.numeric)
+abcdData <- merge(abcdData, Med_Hist, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("Med_Hist")
+
+Dev_Hist <- read.delim("dhx01.txt",  header = TRUE, na.strings = c("", "NA"))
+Dev_Hist <- Dev_Hist[-c(1), ] 
+Dev_Hist$eventname <- Dev_Hist$visit
+Dev_Hist <- dplyr::select(Dev_Hist, subjectkey, eventname, devhx_12a_p, devhx_16_p, devhx_20_p, devhx_21_p)
+Dev_Hist <- Dev_Hist%>% dplyr::na_if(999)
+cols.num <- c(3:6)
+Dev_Hist[cols.num] <- sapply(Dev_Hist[cols.num],as.numeric)
+abcdData <- merge(abcdData, Dev_Hist, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("Dev_Hist")
+
+Pearson <- read.delim("abcd_ps01.txt",  header = TRUE, na.strings = c("", "NA"))
+Pearson <- Pearson[-c(1), ] 
+Pearson <- dplyr::select(Pearson, subjectkey, eventname, pea_wiscv_tss)
+cols.num <- c(3)
+Pearson[cols.num] <- sapply(Pearson[cols.num],as.numeric)
+abcdData <- merge(abcdData, Pearson, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("Pearson")
+
+LittleMan <- read.delim("lmtp201.txt",  header = TRUE, na.strings = c("", "NA"))
+LittleMan <- LittleMan[-c(1), ] 
+LittleMan <- dplyr::select(LittleMan, subjectkey, eventname, lmt_scr_perc_correct, lmt_scr_rt_correct)
+cols.num <- c(3:4)
+LittleMan[cols.num] <- sapply(LittleMan[cols.num],as.numeric)
+abcdData <- merge(abcdData, LittleMan, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("LittleMan")
+
+BisBas <- read.delim("abcd_mhy02.txt",  header = TRUE, na.strings = c("", "NA"))
+BisBas <- BisBas[-c(1), ] 
+BisBas <- dplyr::select(BisBas, subjectkey, eventname, bis_y_ss_bism_sum, bis_y_ss_basm_rr, bis_y_ss_basm_drive)
+cols.num <- c(3:5)
+BisBas[cols.num] <- sapply(BisBas[cols.num],as.numeric)
+abcdData <- merge(abcdData, BisBas, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("BisBas")
+
+Friends <- read.delim("abcd_ysr01.txt",  header = TRUE, na.strings = c("", "NA"))
+Friends <- Friends[-c(1), ] 
+Friends <- dplyr::select(Friends, subjectkey, eventname, resiliency5a_y, resiliency6a_y, resiliency5b_y, resiliency6b_y)
+cols.num <- c(3:6)
+Friends[cols.num] <- sapply(Friends[cols.num],as.numeric)
+abcdData <- merge(abcdData, Friends, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("Friends")
+
+Family_Parent <- read.delim("abcd_sscep01.txt",  header = TRUE, na.strings = c("", "NA"))
+Family_Parent <- Family_Parent[-c(1), ] 
+Family_Parent <- dplyr::select(Family_Parent, subjectkey, eventname, fes_p_ss_fc_pr, psb_p_ss_mean, fes_p_ss_exp_sum_pr, fes_p_ss_int_cult_sum_pr, fes_p_ss_act_rec_sum_pr, fes_p_ss_org_sum_pr, fes_p_ss_cohesion_sum_pr)
+cols.num <- c(3:9)
+Family_Parent[cols.num] <- sapply(Family_Parent[cols.num],as.numeric)
+abcdData <- merge(abcdData, Family_Parent, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("Family_Parent")
+
+Family_Youth <- read.delim("abcd_sscey01.txt",  header = TRUE, na.strings = c("", "NA"))
+Family_Youth <- Family_Youth[-c(1), ] 
+Family_Youth <- dplyr::select(Family_Youth, subjectkey, eventname, fes_y_ss_fc_pr, psb_y_ss_mean, srpf_y_ss_iiss, srpf_y_ss_dfs, wps_ss_sum, dim_y_ss_mean)
+cols.num <- c(3:8)
+Family_Youth[cols.num] <- sapply(Family_Youth[cols.num],as.numeric)
+abcdData <- merge(abcdData, Family_Youth, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("Family_Youth")
+
+Screentime <- read.delim("abcd_ssmty01.txt",  header = TRUE, na.strings = c("", "NA"))
+Screentime <- Screentime[-c(1), ] 
+Screentime <- dplyr::select(Screentime, subjectkey, eventname, stq_y_ss_weekday, stq_y_ss_weekend)
+cols.num <- c(3:4)
+Screentime[cols.num] <- sapply(Screentime[cols.num],as.numeric)
+abcdData <- merge(abcdData, Screentime, by = c("subjectkey", "eventname"), all.x = TRUE)
+rm("Screentime")
+```
+
+## Find columns with all NAs #
+```{r, error=TRUE}
+
+## Create Function
+na.test <-  function (x) {
+    w <- sapply(x, function(x)all(is.na(x)))
+    if (any(w)) {
+        stop(paste("All NA in columns", paste(which(w), collapse=", ")))
+    }
+}
+
+## Apply to data
+na.test(abcdData)
+```
+
+## Save data #
+```{r}
+save(abcdData,file="ABCD.Release.3.0.C4.Merged.Data.PhewasVars.Rda")
+```
+

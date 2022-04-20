@@ -1,0 +1,256 @@
+---
+title: "08_PRSxGREx.Brain"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Install packages #
+```{r}
+rm(list = ls())
+options(stringsAsFactors = FALSE)
+
+library(tidyverse)
+library(lme4)
+library(lmerTest)
+library(ggseg)
+library(sjPlot)
+library(interactions)
+```
+
+## Load data #
+```{r}
+## Load data
+load("/Users/leannahernandez/GoogleDrive/Leanna/UCLA/ABCD/Repos/C4A-ABCD/ABCD.Release.3.0.C4.Merged.Data.PhewasVars.Rda")
+```
+
+## Average across left and right hemispheres #
+```{r}
+# Calculate averages for cortical thickness, surface area, volume
+varlist <- c("smri_thick_cdk_bankssts", "smri_thick_cdk_cdacate", "smri_thick_cdk_cdmdfr", "smri_thick_cdk_cuneus", "smri_thick_cdk_ehinal", "smri_thick_cdk_fusiform", "smri_thick_cdk_ifpl", "smri_thick_cdk_iftm", "smri_thick_cdk_ihcate", "smri_thick_cdk_locc", "smri_thick_cdk_lobfr", "smri_thick_cdk_lingual", "smri_thick_cdk_mobfr", "smri_thick_cdk_mdtm", "smri_thick_cdk_parahpal", "smri_thick_cdk_paracn", "smri_thick_cdk_parsopc", "smri_thick_cdk_parsobis", "smri_thick_cdk_parstgris", "smri_thick_cdk_pericc", "smri_thick_cdk_postcn", "smri_thick_cdk_ptcate", "smri_thick_cdk_precn", "smri_thick_cdk_pc", "smri_thick_cdk_rracate", "smri_thick_cdk_rrmdfr", "smri_thick_cdk_sufr", "smri_thick_cdk_supl", "smri_thick_cdk_sutm", "smri_thick_cdk_sm", "smri_thick_cdk_frpole", "smri_thick_cdk_tmpole", "smri_thick_cdk_trvtm", "smri_thick_cdk_insula", "smri_area_cdk_bankssts", "smri_area_cdk_cdacate", "smri_area_cdk_cdmdfr", "smri_area_cdk_cuneus", "smri_area_cdk_ehinal", "smri_area_cdk_fusiform", "smri_area_cdk_ifpl", "smri_area_cdk_iftm", "smri_area_cdk_ihcate", "smri_area_cdk_locc", "smri_area_cdk_lobfr", "smri_area_cdk_lingual", "smri_area_cdk_mobfr", "smri_area_cdk_mdtm", "smri_area_cdk_parahpal", "smri_area_cdk_paracn", "smri_area_cdk_parsopc", "smri_area_cdk_parsobis", "smri_area_cdk_parstgris", "smri_area_cdk_pericc", "smri_area_cdk_postcn", "smri_area_cdk_ptcate", "smri_area_cdk_precn", "smri_area_cdk_pc", "smri_area_cdk_rracate", "smri_area_cdk_rrmdfr", "smri_area_cdk_sufr", "smri_area_cdk_supl", "smri_area_cdk_sutm", "smri_area_cdk_sm", "smri_area_cdk_frpole", "smri_area_cdk_tmpole", "smri_area_cdk_trvtm", "smri_area_cdk_insula", "smri_vol_scs_cbwmatter", "smri_vol_scs_ltventricle", "smri_vol_scs_inflatvent", "smri_vol_scs_crbwmatter", "smri_vol_scs_crbcortex", "smri_vol_scs_tp", "smri_vol_scs_caudate", "smri_vol_scs_putamen", "smri_vol_scs_pallidum", "smri_vol_scs_hpus", "smri_vol_scs_amygdala", "smri_vol_scs_vedc")
+
+for (i in 1:length(varlist)){
+  abcdData[, paste(varlist[[i]])] <- rowMeans(abcdData[,c(paste0(varlist[[i]], "rh"), paste0(varlist[[i]], "lh"))], na.rm=TRUE)
+}
+
+# NaN to NA
+is.nan.data.frame <- function(x)
+  do.call(cbind, lapply(x, is.nan))
+abcdData[is.nan(abcdData)] <- NA
+```
+
+## Filter data #
+```{r}
+abcdData_baseline <- abcdData %>% filter(eventname == "baseline_year_1_arm_1")
+abcdData_baseline %>% group_by(ethnicity) %>% tally() 
+
+abcdData_baseline_C4 <- abcdData_baseline %>% filter(!is.na(c4a_total))
+abcdData_baseline_C4 %>% group_by(ethnicity) %>% tally() 
+
+abcdData_baseline_C4_filtered <- abcdData_baseline_C4 %>% filter(ethnicity %in% c("AFR", "AMR", "EUR"))
+abcdData_baseline_C4_filtered %>% group_by(ethnicity) %>% tally() 
+
+abcdData_baseline_C4_filtered <- abcdData_baseline_C4_filtered %>%
+  filter(c4_allele1_structure %in% c("AL","AL-AL","AL-BL", "AL-BS", "BS"))
+abcdData_baseline_C4_filtered <- abcdData_baseline_C4_filtered %>%
+  filter(c4_allele2_structure %in% c("AL","AL-AL","AL-BL", "AL-BS", "BS"))
+
+abcdData_baseline_C4_filtered %>% group_by(rel_family_id) %>% tally() %>% arrange(desc(n)) 
+```
+
+## Update labels #
+```{r}
+abcdData_baseline_C4_filtered$ethnicity <- as.factor(abcdData_baseline_C4_filtered$ethnicity)
+levels(abcdData_baseline_C4_filtered$ethnicity)
+levels(abcdData_baseline_C4_filtered$ethnicity) <- list (Latinx = "AMR", EUR = "EUR", AFR = "AFR")
+levels(abcdData_baseline_C4_filtered$ethnicity)
+```
+
+## Scale PRS #
+```{r}
+abcdData_baseline_C4_filtered$PRS.SCZ.CLOZUK.NoMHC_scale <- scale(abcdData_baseline_C4_filtered$PRS.SCZ.CLOZUK.NoMHC, center = TRUE, scale = TRUE)
+hist(abcdData_baseline_C4_filtered$PRS.SCZ.CLOZUK.NoMHC_scale)
+abcdData_baseline_C4_filtered$PRS.SCZ.CLOZUK.OneMHC_scale <- scale(abcdData_baseline_C4_filtered$PRS.SCZ.CLOZUK.OneMHC, center = TRUE, scale = TRUE)
+hist(abcdData_baseline_C4_filtered$PRS.SCZ.CLOZUK.OneMHC_scale)
+
+eur.prs_filtered <- abcdData_baseline_C4_filtered %>% filter(!is.na(PRS.SCZ.CLOZUK.NoMHC))
+```
+
+## Cortical thickness - PRS x GREx #
+```{r}
+bl <- colorRampPalette(c("navy","royalblue","lightskyblue"))(200)                       
+re <- colorRampPalette(c("mistyrose", "red2","darkred"))(200)
+trans <- yarrr::transparent("blue", trans.val = 1)
+
+which(colnames(eur.prs_filtered) == "smri_thick_cdk_bankssts") #2557
+which(colnames(eur.prs_filtered) == "smri_thick_cdk_insula") #2590
+
+datalist <- list(eur.prs_filtered)
+names(datalist) <- c("eur.prs_filtered")
+
+for (j in 1:length(datalist)) {
+  df <- data.frame() 
+  print(names(datalist)[j])
+  for (i in 2557:2590) {
+    this_var = datalist[[j]][, i]
+    mod0 <- lmer(as.matrix(this_var) ~ c4a_expression + c4b_expression*PRS.SCZ.CLOZUK.NoMHC_scale + sex + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + mrisdp_151 +
+                   (1 | mri_info_deviceserialnumber),
+                 data = datalist[[j]], REML = FALSE)
+    mod1 <- lmer(as.matrix(this_var) ~ c4b_expression + c4a_expression*PRS.SCZ.CLOZUK.NoMHC_scale + sex + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + mrisdp_151 +
+                   (1 | mri_info_deviceserialnumber),
+                 data = datalist[[j]], REML = FALSE)
+    mod2 <- lmer(as.matrix(this_var) ~ c4a_expression*PRS.SCZ.CLOZUK.NoMHC_scale + c4b_expression*PRS.SCZ.CLOZUK.NoMHC_scale + sex + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + mrisdp_151 +
+                   (1 | mri_info_deviceserialnumber),
+                 data = datalist[[j]], REML = FALSE)
+    p1 <- anova(mod0, mod2)
+    p2 <- anova(mod1, mod2)
+    df <- rbind(df, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(mod2),
+                               beta_C4A = summary(mod2)$coefficients[13, 1],
+                               beta_C4B = summary(mod2)$coefficients[14, 1],
+                               stderr_C4A = summary(mod2)$coefficients[13, 2],
+                               stderr_C4B = summary(mod2)$coefficients[14, 2],
+                               P_C4A = p1[2, 8],
+                               P_C4B = p2[2, 8]))
+    
+  }
+}
+
+df$fdr_C4A = p.adjust(df$P_C4A,'fdr')
+df$fdr_C4B = p.adjust(df$P_C4B,'fdr')
+print(df)
+```
+
+## Surface area - PRS x GREx #
+```{r}
+bl <- colorRampPalette(c("navy","royalblue","lightskyblue"))(200)                       
+re <- colorRampPalette(c("mistyrose", "red2","darkred"))(200)
+trans <- yarrr::transparent("blue", trans.val = 1)
+
+which(colnames(eur.prs_filtered) == "smri_area_cdk_bankssts") #2591
+which(colnames(eur.prs_filtered) == "smri_area_cdk_insula") #2624
+
+datalist <- list(eur.prs_filtered)
+names(datalist) <- c("eur.prs_filtered")
+
+for (j in 1:length(datalist)) {
+  df <- data.frame() 
+  print(names(datalist)[j])
+  for (i in 2591:2624) {
+    this_var = datalist[[j]][, i]
+    mod0 <- lmer(as.matrix(this_var) ~ c4a_expression + c4b_expression*PRS.SCZ.CLOZUK.NoMHC_scale + sex + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + mrisdp_453 +
+                   (1 | mri_info_deviceserialnumber),
+                 data = datalist[[j]], REML = FALSE)
+    mod1 <- lmer(as.matrix(this_var) ~ c4b_expression + c4a_expression*PRS.SCZ.CLOZUK.NoMHC_scale + sex + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + mrisdp_453 +
+                   (1 | mri_info_deviceserialnumber),
+                 data = datalist[[j]], REML = FALSE)
+    mod2 <- lmer(as.matrix(this_var) ~ c4a_expression*PRS.SCZ.CLOZUK.NoMHC_scale +
+                   c4b_expression*PRS.SCZ.CLOZUK.NoMHC_scale + sex + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + mrisdp_453 +
+                   (1 | mri_info_deviceserialnumber),
+                 data = datalist[[j]], REML = FALSE)
+    p1 <- anova(mod0, mod2)
+    p2 <- anova(mod1, mod2)
+    df <- rbind(df, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(mod2),
+                               beta_C4A = summary(mod2)$coefficients[13, 1],
+                               beta_C4B = summary(mod2)$coefficients[14, 1],
+                               stderr_C4A = summary(mod2)$coefficients[13, 2],
+                               stderr_C4B = summary(mod2)$coefficients[14, 2],
+                               P_C4A = p1[2, 8],
+                               P_C4B = p2[2, 8]))
+    
+  }
+}
+
+df$fdr_C4A = p.adjust(df$P_C4A,'fdr')
+df$fdr_C4B = p.adjust(df$P_C4B,'fdr')
+print(df)
+```
+
+## Test assocaition between C4A and entorhinal cortex conrtolling for PRS
+```{r}
+my.mod0 <- lmer(smri_area_cdk_ehinal ~ c4b_expression + PRS.SCZ.CLOZUK.NoMHC_scale +
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + mrisdp_453 +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = eur.prs_filtered, REML = FALSE)
+
+my.mod1 <- lmer(smri_area_cdk_ehinal ~ c4a_expression + PRS.SCZ.CLOZUK.NoMHC_scale +
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + mrisdp_453 +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = eur.prs_filtered, REML = FALSE)
+
+my.mod2 <- lmer(smri_area_cdk_ehinal ~ c4a_expression + c4b_expression + PRS.SCZ.CLOZUK.NoMHC_scale +
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + mrisdp_453 +
+                   (1 | mri_info_deviceserialnumber) + (1|rel_family_id),
+                 data = eur.prs_filtered, REML = FALSE)
+
+summary(my.mod2)
+anova(my.mod0, my.mod2)
+```
+
+## Volume - PRS x GREx #
+```{r}
+bl <- colorRampPalette(c("navy","royalblue","lightskyblue"))(200)                       
+re <- colorRampPalette(c("mistyrose", "red2","darkred"))(200)
+trans <- yarrr::transparent("blue", trans.val = 1)
+
+which(colnames(eur.prs_filtered) == "smri_vol_scs_cbwmatter") #2625
+which(colnames(eur.prs_filtered) == "smri_vol_scs_pallidum") #2633
+which(colnames(eur.prs_filtered) == "smri_vol_scs_3rdventricle") #543
+which(colnames(eur.prs_filtered) == "smri_vol_scs_bstem") #545
+which(colnames(eur.prs_filtered) == "smri_vol_scs_hpus") #2634
+which(colnames(eur.prs_filtered) == "smri_vol_scs_amygdala") #2635
+which(colnames(eur.prs_filtered) == "smri_vol_scs_csf") #548
+which(colnames(eur.prs_filtered) == "smri_vol_scs_aal") #549
+which(colnames(eur.prs_filtered) == "smri_vol_scs_vedc") #2636
+which(colnames(eur.prs_filtered) == "smri_vol_scs_ccps") #564
+which(colnames(eur.prs_filtered) == "smri_vol_scs_ccat") #568
+
+# PRS interaction
+datalist <- list(eur.prs_filtered)
+names(datalist) <- c("eur.prs_filtered")
+
+for (j in 1:length(datalist)) {
+  df <- data.frame() 
+  print(names(datalist)[j])
+  for (i in c(2625:2633, 543:545, 2634:2635, 548:549, 2636, 564:568)) {
+    this_var = datalist[[j]][, i]
+    mod0 <- lmer(as.matrix(this_var) ~ c4a_expression + c4b_expression*PRS.SCZ.CLOZUK.NoMHC_scale + sex + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + smri_vol_scs_wholeb +
+                   (1 | mri_info_deviceserialnumber),
+                 data = datalist[[j]], REML = FALSE)
+    mod1 <- lmer(as.matrix(this_var) ~ c4b_expression + c4a_expression*PRS.SCZ.CLOZUK.NoMHC_scale + sex + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + smri_vol_scs_wholeb +
+                   (1 | mri_info_deviceserialnumber),
+                 data = datalist[[j]], REML = FALSE)
+    mod2 <- lmer(as.matrix(this_var) ~ c4a_expression*PRS.SCZ.CLOZUK.NoMHC_scale + c4b_expression*PRS.SCZ.CLOZUK.NoMHC_scale + sex + 
+                   interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + smri_vol_scs_wholeb +
+                   (1 | mri_info_deviceserialnumber),
+                 data = datalist[[j]], REML = FALSE)
+    p1 <- anova(mod0, mod2)
+    p2 <- anova(mod1, mod2)
+    df <- rbind(df, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(mod2),
+                               beta_C4A = summary(mod2)$coefficients[13, 1],
+                               beta_C4B = summary(mod2)$coefficients[14, 1],
+                               stderr_C4A = summary(mod2)$coefficients[13, 2],
+                               stderr_C4B = summary(mod2)$coefficients[14, 2],
+                               P_C4A = p1[2, 8],
+                               P_C4B = p2[2, 8]))
+  }
+}
+
+df$fdr_C4A = p.adjust(df$P_C4A,'fdr')
+df$fdr_C4B = p.adjust(df$P_C4B,'fdr')
+print(df)
+```
+

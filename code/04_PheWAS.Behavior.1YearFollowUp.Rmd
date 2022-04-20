@@ -1,0 +1,744 @@
+---
+title: "04_PheWAS.Behavior.1YearFollowUp"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Install packages #
+```{r}
+rm(list = ls())
+options(stringsAsFactors = FALSE)
+
+library(tidyverse)
+library(lme4)
+library(lmerTest)
+library(FRGEpistasis)
+library(viridis)
+library(PheWAS)
+library(ggrepel)
+library(effects)
+library(fdrtool)
+```
+
+## Load data #
+```{r}
+load("ABCD.Release.3.0.C4.Merged.Data.PhewasVars.Rda")
+```
+
+## Filter data #
+```{r}
+abcdData_Y1Followup <- abcdData %>% filter(eventname == "1_year_follow_up_y_arm_1")
+abcdData_Y1Followup %>% group_by(ethnicity) %>% tally() 
+
+abcdData_Y1Followup_C4 <- abcdData_Y1Followup %>% filter(!is.na(c4a_total))
+abcdData_Y1Followup_C4 %>% group_by(ethnicity) %>% tally() 
+
+abcdData_Y1Followup_C4 <- abcdData_Y1Followup_C4 %>% filter(!is.na(pps_y_ss_number))
+abcdData_Y1Followup_C4 %>% group_by(ethnicity) %>% tally() 
+
+abcdData_Y1Followup_C4 <- abcdData_Y1Followup_C4 %>% filter(!is.na(pps_y_ss_severity_score))
+abcdData_Y1Followup_C4 %>% group_by(ethnicity) %>% tally() 
+
+abcdData_Y1Followup_C4 <- abcdData_Y1Followup_C4 %>% filter(!is.na(Psychosis_wPQ_susp))
+abcdData_Y1Followup_C4 %>% group_by(ethnicity) %>% tally() 
+
+abcdData_Y1Followup_C4_filtered <- abcdData_Y1Followup_C4 %>% filter(ethnicity %in% c("AFR", "AMR", "EUR"))
+abcdData_Y1Followup_C4_filtered %>% group_by(ethnicity) %>% tally() 
+
+abcdData_Y1Followup_C4_filtered <- abcdData_Y1Followup_C4_filtered %>%
+  filter(c4_allele1_structure %in% c("AL","AL-AL","AL-BL", "AL-BS", "BS"))
+abcdData_Y1Followup_C4_filtered <- abcdData_Y1Followup_C4_filtered %>%
+  filter(c4_allele2_structure %in% c("AL","AL-AL","AL-BL", "AL-BS", "BS"))
+
+abcdData_Y1Followup_C4_filtered %>% group_by(rel_family_id) %>% tally() %>% arrange(desc(n))  
+```
+
+## Filter to unique family IDs #
+```{r}
+set.seed(8)
+
+abcdData_Y1Followup_C4_filtered <- abcdData_Y1Followup_C4_filtered %>% 
+  group_by(rel_family_id) %>% 
+  sample_n(1) 
+
+abcdData_Y1Followup_C4_filtered %>% group_by(rel_family_id) %>% tally() %>% arrange(desc(n))  
+```
+
+## Coalesce puberty variable #
+```{r}
+abcdData_Y1Followup_C4_filtered <- 
+  abcdData_Y1Followup_C4_filtered %>% 
+  mutate(pds_p_ss_all_category_2 = coalesce(pds_p_ss_male_category_2, pds_p_ss_female_category_2)) 
+abcdData_Y1Followup_C4_filtered$pds_p_ss_all_category_2 <- as.numeric(abcdData_Y1Followup_C4_filtered$pds_p_ss_all_category_2)
+```
+
+## Add 1 to gamma log-link variables that start at 0  #
+```{r}
+abcdData_Y1Followup_C4_filtered$bis_y_ss_bas_rr_plus1 <- abcdData_Y1Followup_C4_filtered$bis_y_ss_bas_rr + 1
+abcdData_Y1Followup_C4_filtered$bis_y_ss_bas_drive_plus1 <- abcdData_Y1Followup_C4_filtered$bis_y_ss_bas_drive + 1
+abcdData_Y1Followup_C4_filtered$pgbi_p_ss_score_plus1 <- abcdData_Y1Followup_C4_filtered$pgbi_p_ss_score + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_4b_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_4b_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_5b_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_5b_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6a_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6a_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6b_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6b_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6c_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6c_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6d_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6d_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6e_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6e_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6f_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6f_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6g_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6g_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6h_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6h_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6i_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6i_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6j_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6j_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6k_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6k_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6l_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6l_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6m_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6m_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6n_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6n_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6o_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6o_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6p_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6p_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6q_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6q_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6r_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6r_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_6s_times_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_6s_times_p + 1
+abcdData_Y1Followup_C4_filtered$medhx_ss_9b_p_plus1 <- abcdData_Y1Followup_C4_filtered$medhx_ss_9b_p + 1
+abcdData_Y1Followup_C4_filtered$devhx_16_p_plus1 <- abcdData_Y1Followup_C4_filtered$devhx_16_p + 1
+abcdData_Y1Followup_C4_filtered$bis_y_ss_basm_rr_plus1 <- abcdData_Y1Followup_C4_filtered$bis_y_ss_basm_rr + 1
+abcdData_Y1Followup_C4_filtered$bis_y_ss_basm_drive_plus1 <- abcdData_Y1Followup_C4_filtered$bis_y_ss_basm_drive + 1
+abcdData_Y1Followup_C4_filtered$bis_y_ss_bas_fs_plus1 <- abcdData_Y1Followup_C4_filtered$bis_y_ss_bas_fs + 1
+abcdData_Y1Followup_C4_filtered$resiliency5a_y_plus1 <- abcdData_Y1Followup_C4_filtered$resiliency5a_y + 1
+abcdData_Y1Followup_C4_filtered$resiliency6a_y_plus1 <- abcdData_Y1Followup_C4_filtered$resiliency6a_y + 1
+abcdData_Y1Followup_C4_filtered$resiliency5b_y_plus1 <- abcdData_Y1Followup_C4_filtered$resiliency5b_y + 1
+abcdData_Y1Followup_C4_filtered$resiliency6b_y_plus1 <- abcdData_Y1Followup_C4_filtered$resiliency6b_y + 1
+abcdData_Y1Followup_C4_filtered$fes_p_ss_fc_pr_plus1 <- abcdData_Y1Followup_C4_filtered$fes_p_ss_fc_pr + 1
+abcdData_Y1Followup_C4_filtered$psb_p_ss_mean_plus1 <- abcdData_Y1Followup_C4_filtered$psb_p_ss_mean + 1
+abcdData_Y1Followup_C4_filtered$fes_y_ss_fc_pr_plus1 <- abcdData_Y1Followup_C4_filtered$fes_y_ss_fc_pr + 1
+abcdData_Y1Followup_C4_filtered$psb_y_ss_mean_plus1 <- abcdData_Y1Followup_C4_filtered$psb_y_ss_mean + 1
+abcdData_Y1Followup_C4_filtered$srpf_y_ss_iiss_plus1 <- abcdData_Y1Followup_C4_filtered$srpf_y_ss_iiss + 1
+abcdData_Y1Followup_C4_filtered$stq_y_ss_weekday_plus1 <- abcdData_Y1Followup_C4_filtered$stq_y_ss_weekday + 1
+abcdData_Y1Followup_C4_filtered$stq_y_ss_weekend_plus1 <- abcdData_Y1Followup_C4_filtered$stq_y_ss_weekend + 1
+```
+
+## Update labels #
+```{r}
+abcdData_Y1Followup_C4_filtered$ethnicity <- as.factor(abcdData_Y1Followup_C4_filtered$ethnicity)
+levels(abcdData_Y1Followup_C4_filtered$ethnicity)
+levels(abcdData_Y1Followup_C4_filtered$ethnicity) <- list (Latinx = "AMR", EUR = "EUR", AFR = "AFR")
+levels(abcdData_Y1Followup_C4_filtered$ethnicity)
+```
+
+## Group by ancestry and sex #
+```{r}
+afr <- filter(abcdData_Y1Followup_C4_filtered, ethnicity == "AFR")
+latinx <- filter(abcdData_Y1Followup_C4_filtered, ethnicity == "Latinx")
+eur <- filter(abcdData_Y1Followup_C4_filtered, ethnicity == "EUR")
+
+male <- filter(abcdData_Y1Followup_C4_filtered, sex == "M")
+female <- filter(abcdData_Y1Followup_C4_filtered, sex == "F")
+```
+
+## Rename phenotypes for PheWAS plotting #
+```{r}
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'bis_y_ss_bas_rr_plus1'] <- 'bis_y_ss_bas_rr'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'bis_y_ss_bas_drive_plus1'] <- 'bis_y_ss_bas_drive'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'pgbi_p_ss_score_plus1'] <- 'pgbi_p_ss_score'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_4b_p_plus1'] <- 'medhx_ss_4b_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_5b_p_plus1'] <- 'medhx_ss_5b_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6a_times_p_plus1'] <- 'medhx_ss_6a_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6b_times_p_plus1'] <- 'medhx_ss_6b_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6c_times_p_plus1'] <- 'medhx_ss_6c_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6d_times_p_plus1'] <- 'medhx_ss_6d_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6e_times_p_plus1'] <- 'medhx_ss_6e_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6f_times_p_plus1'] <- 'medhx_ss_6f_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6g_times_p_plus1'] <- 'medhx_ss_6g_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6h_times_p_plus1'] <- 'medhx_ss_6h_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6i_times_p_plus1'] <- 'medhx_ss_6i_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6j_times_p_plus1'] <- 'medhx_ss_6j_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6k_times_p_plus1'] <- 'medhx_ss_6k_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6l_times_p_plus1'] <- 'medhx_ss_6l_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6m_times_p_plus1'] <- 'medhx_ss_6m_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6n_times_p_plus1'] <- 'medhx_ss_6n_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6o_times_p_plus1'] <- 'medhx_ss_6o_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6p_times_p_plus1'] <- 'medhx_ss_6p_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6q_times_p_plus1'] <- 'medhx_ss_6q_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6r_times_p_plus1'] <- 'medhx_ss_6r_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_6s_times_p_plus1'] <- 'medhx_ss_6s_times_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'medhx_ss_9b_p_plus1'] <- 'medhx_ss_9b_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'devhx_16_p_plus1'] <- 'devhx_16_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'bis_y_ss_basm_rr_plus1'] <- 'bis_y_ss_basm_rr'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'bis_y_ss_basm_drive_plus1'] <- 'bis_y_ss_basm_drive'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'bis_y_ss_bas_fs_plus1'] <- 'bis_y_ss_bas_fs'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'resiliency5a_y_plus1'] <- 'resiliency5a_y_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'resiliency6a_y_plus1'] <- 'resiliency6a_y_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'resiliency5b_y_plus1'] <- 'resiliency5b_y_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'resiliency6b_y_plus1'] <- 'resiliency6b_y_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'fes_p_ss_fc_pr_plus1'] <- 'fes_p_ss_fc_pr_p'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'psb_p_ss_mean_plus1'] <- 'psb_p_ss_mean'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'fes_y_ss_fc_pr_plus1'] <- 'fes_y_ss_fc_pr'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'psb_y_ss_mean_plus1'] <- 'psb_y_ss_mean'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'srpf_y_ss_iiss_plus1'] <- 'srpf_y_ss_iiss'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'stq_y_ss_weekday_plus1'] <- 'stq_y_ss_weekday'
+names(abcdData_Y1Followup_C4_filtered)[names(abcdData_Y1Followup_C4_filtered) == 'stq_y_ss_weekend_plus1'] <- 'stq_y_ss_weekend'
+
+names(afr)[names(afr) == 'bis_y_ss_bas_rr_plus1'] <- 'bis_y_ss_bas_rr'
+names(afr)[names(afr) == 'bis_y_ss_bas_drive_plus1'] <- 'bis_y_ss_bas_drive'
+names(afr)[names(afr) == 'pgbi_p_ss_score_plus1'] <- 'pgbi_p_ss_score'
+names(afr)[names(afr) == 'medhx_ss_4b_p_plus1'] <- 'medhx_ss_4b_p'
+names(afr)[names(afr) == 'medhx_ss_5b_p_plus1'] <- 'medhx_ss_5b_p'
+names(afr)[names(afr) == 'medhx_ss_6a_times_p_plus1'] <- 'medhx_ss_6a_times_p'
+names(afr)[names(afr) == 'medhx_ss_6b_times_p_plus1'] <- 'medhx_ss_6b_times_p'
+names(afr)[names(afr) == 'medhx_ss_6c_times_p_plus1'] <- 'medhx_ss_6c_times_p'
+names(afr)[names(afr) == 'medhx_ss_6d_times_p_plus1'] <- 'medhx_ss_6d_times_p'
+names(afr)[names(afr) == 'medhx_ss_6e_times_p_plus1'] <- 'medhx_ss_6e_times_p'
+names(afr)[names(afr) == 'medhx_ss_6f_times_p_plus1'] <- 'medhx_ss_6f_times_p'
+names(afr)[names(afr) == 'medhx_ss_6g_times_p_plus1'] <- 'medhx_ss_6g_times_p'
+names(afr)[names(afr) == 'medhx_ss_6h_times_p_plus1'] <- 'medhx_ss_6h_times_p'
+names(afr)[names(afr) == 'medhx_ss_6i_times_p_plus1'] <- 'medhx_ss_6i_times_p'
+names(afr)[names(afr) == 'medhx_ss_6j_times_p_plus1'] <- 'medhx_ss_6j_times_p'
+names(afr)[names(afr) == 'medhx_ss_6k_times_p_plus1'] <- 'medhx_ss_6k_times_p'
+names(afr)[names(afr) == 'medhx_ss_6l_times_p_plus1'] <- 'medhx_ss_6l_times_p'
+names(afr)[names(afr) == 'medhx_ss_6m_times_p_plus1'] <- 'medhx_ss_6m_times_p'
+names(afr)[names(afr) == 'medhx_ss_6n_times_p_plus1'] <- 'medhx_ss_6n_times_p'
+names(afr)[names(afr) == 'medhx_ss_6o_times_p_plus1'] <- 'medhx_ss_6o_times_p'
+names(afr)[names(afr) == 'medhx_ss_6p_times_p_plus1'] <- 'medhx_ss_6p_times_p'
+names(afr)[names(afr) == 'medhx_ss_6q_times_p_plus1'] <- 'medhx_ss_6q_times_p'
+names(afr)[names(afr) == 'medhx_ss_6r_times_p_plus1'] <- 'medhx_ss_6r_times_p'
+names(afr)[names(afr) == 'medhx_ss_6s_times_p_plus1'] <- 'medhx_ss_6s_times_p'
+names(afr)[names(afr) == 'medhx_ss_9b_p_plus1'] <- 'medhx_ss_9b_p'
+names(afr)[names(afr) == 'devhx_16_p_plus1'] <- 'devhx_16_p'
+names(afr)[names(afr) == 'bis_y_ss_basm_rr_plus1'] <- 'bis_y_ss_basm_rr'
+names(afr)[names(afr) == 'bis_y_ss_basm_drive_plus1'] <- 'bis_y_ss_basm_drive'
+names(afr)[names(afr) == 'bis_y_ss_bas_fs_plus1'] <- 'bis_y_ss_bas_fs'
+names(afr)[names(afr) == 'resiliency5a_y_plus1'] <- 'resiliency5a_y_p'
+names(afr)[names(afr) == 'resiliency6a_y_plus1'] <- 'resiliency6a_y_p'
+names(afr)[names(afr) == 'resiliency5b_y_plus1'] <- 'resiliency5b_y_p'
+names(afr)[names(afr) == 'resiliency6b_y_plus1'] <- 'resiliency6b_y_p'
+names(afr)[names(afr) == 'fes_p_ss_fc_pr_plus1'] <- 'fes_p_ss_fc_pr_p'
+names(afr)[names(afr) == 'psb_p_ss_mean_plus1'] <- 'psb_p_ss_mean'
+names(afr)[names(afr) == 'fes_y_ss_fc_pr_plus1'] <- 'fes_y_ss_fc_pr'
+names(afr)[names(afr) == 'psb_y_ss_mean_plus1'] <- 'psb_y_ss_mean'
+names(afr)[names(afr) == 'srpf_y_ss_iiss_plus1'] <- 'srpf_y_ss_iiss'
+names(afr)[names(afr) == 'stq_y_ss_weekday_plus1'] <- 'stq_y_ss_weekday'
+names(afr)[names(afr) == 'stq_y_ss_weekend_plus1'] <- 'stq_y_ss_weekend'
+
+names(latinx)[names(latinx) == 'bis_y_ss_bas_rr_plus1'] <- 'bis_y_ss_bas_rr'
+names(latinx)[names(latinx) == 'bis_y_ss_bas_drive_plus1'] <- 'bis_y_ss_bas_drive'
+names(latinx)[names(latinx) == 'pgbi_p_ss_score_plus1'] <- 'pgbi_p_ss_score'
+names(latinx)[names(latinx) == 'medhx_ss_4b_p_plus1'] <- 'medhx_ss_4b_p'
+names(latinx)[names(latinx) == 'medhx_ss_5b_p_plus1'] <- 'medhx_ss_5b_p'
+names(latinx)[names(latinx) == 'medhx_ss_6a_times_p_plus1'] <- 'medhx_ss_6a_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6b_times_p_plus1'] <- 'medhx_ss_6b_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6c_times_p_plus1'] <- 'medhx_ss_6c_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6d_times_p_plus1'] <- 'medhx_ss_6d_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6e_times_p_plus1'] <- 'medhx_ss_6e_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6f_times_p_plus1'] <- 'medhx_ss_6f_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6g_times_p_plus1'] <- 'medhx_ss_6g_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6h_times_p_plus1'] <- 'medhx_ss_6h_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6i_times_p_plus1'] <- 'medhx_ss_6i_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6j_times_p_plus1'] <- 'medhx_ss_6j_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6k_times_p_plus1'] <- 'medhx_ss_6k_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6l_times_p_plus1'] <- 'medhx_ss_6l_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6m_times_p_plus1'] <- 'medhx_ss_6m_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6n_times_p_plus1'] <- 'medhx_ss_6n_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6o_times_p_plus1'] <- 'medhx_ss_6o_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6p_times_p_plus1'] <- 'medhx_ss_6p_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6q_times_p_plus1'] <- 'medhx_ss_6q_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6r_times_p_plus1'] <- 'medhx_ss_6r_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_6s_times_p_plus1'] <- 'medhx_ss_6s_times_p'
+names(latinx)[names(latinx) == 'medhx_ss_9b_p_plus1'] <- 'medhx_ss_9b_p'
+names(latinx)[names(latinx) == 'devhx_16_p_plus1'] <- 'devhx_16_p'
+names(latinx)[names(latinx) == 'bis_y_ss_basm_rr_plus1'] <- 'bis_y_ss_basm_rr'
+names(latinx)[names(latinx) == 'bis_y_ss_basm_drive_plus1'] <- 'bis_y_ss_basm_drive'
+names(latinx)[names(latinx) == 'bis_y_ss_bas_fs_plus1'] <- 'bis_y_ss_bas_fs'
+names(latinx)[names(latinx) == 'resiliency5a_y_plus1'] <- 'resiliency5a_y_p'
+names(latinx)[names(latinx) == 'resiliency6a_y_plus1'] <- 'resiliency6a_y_p'
+names(latinx)[names(latinx) == 'resiliency5b_y_plus1'] <- 'resiliency5b_y_p'
+names(latinx)[names(latinx) == 'resiliency6b_y_plus1'] <- 'resiliency6b_y_p'
+names(latinx)[names(latinx) == 'fes_p_ss_fc_pr_plus1'] <- 'fes_p_ss_fc_pr_p'
+names(latinx)[names(latinx) == 'psb_p_ss_mean_plus1'] <- 'psb_p_ss_mean'
+names(latinx)[names(latinx) == 'fes_y_ss_fc_pr_plus1'] <- 'fes_y_ss_fc_pr'
+names(latinx)[names(latinx) == 'psb_y_ss_mean_plus1'] <- 'psb_y_ss_mean'
+names(latinx)[names(latinx) == 'srpf_y_ss_iiss_plus1'] <- 'srpf_y_ss_iiss'
+names(latinx)[names(latinx) == 'stq_y_ss_weekday_plus1'] <- 'stq_y_ss_weekday'
+names(latinx)[names(latinx) == 'stq_y_ss_weekend_plus1'] <- 'stq_y_ss_weekend'
+
+names(eur)[names(eur) == 'bis_y_ss_bas_rr_plus1'] <- 'bis_y_ss_bas_rr'
+names(eur)[names(eur) == 'bis_y_ss_bas_drive_plus1'] <- 'bis_y_ss_bas_drive'
+names(eur)[names(eur) == 'pgbi_p_ss_score_plus1'] <- 'pgbi_p_ss_score'
+names(eur)[names(eur) == 'medhx_ss_4b_p_plus1'] <- 'medhx_ss_4b_p'
+names(eur)[names(eur) == 'medhx_ss_5b_p_plus1'] <- 'medhx_ss_5b_p'
+names(eur)[names(eur) == 'medhx_ss_6a_times_p_plus1'] <- 'medhx_ss_6a_times_p'
+names(eur)[names(eur) == 'medhx_ss_6b_times_p_plus1'] <- 'medhx_ss_6b_times_p'
+names(eur)[names(eur) == 'medhx_ss_6c_times_p_plus1'] <- 'medhx_ss_6c_times_p'
+names(eur)[names(eur) == 'medhx_ss_6d_times_p_plus1'] <- 'medhx_ss_6d_times_p'
+names(eur)[names(eur) == 'medhx_ss_6e_times_p_plus1'] <- 'medhx_ss_6e_times_p'
+names(eur)[names(eur) == 'medhx_ss_6f_times_p_plus1'] <- 'medhx_ss_6f_times_p'
+names(eur)[names(eur) == 'medhx_ss_6g_times_p_plus1'] <- 'medhx_ss_6g_times_p'
+names(eur)[names(eur) == 'medhx_ss_6h_times_p_plus1'] <- 'medhx_ss_6h_times_p'
+names(eur)[names(eur) == 'medhx_ss_6i_times_p_plus1'] <- 'medhx_ss_6i_times_p'
+names(eur)[names(eur) == 'medhx_ss_6j_times_p_plus1'] <- 'medhx_ss_6j_times_p'
+names(eur)[names(eur) == 'medhx_ss_6k_times_p_plus1'] <- 'medhx_ss_6k_times_p'
+names(eur)[names(eur) == 'medhx_ss_6l_times_p_plus1'] <- 'medhx_ss_6l_times_p'
+names(eur)[names(eur) == 'medhx_ss_6m_times_p_plus1'] <- 'medhx_ss_6m_times_p'
+names(eur)[names(eur) == 'medhx_ss_6n_times_p_plus1'] <- 'medhx_ss_6n_times_p'
+names(eur)[names(eur) == 'medhx_ss_6o_times_p_plus1'] <- 'medhx_ss_6o_times_p'
+names(eur)[names(eur) == 'medhx_ss_6p_times_p_plus1'] <- 'medhx_ss_6p_times_p'
+names(eur)[names(eur) == 'medhx_ss_6q_times_p_plus1'] <- 'medhx_ss_6q_times_p'
+names(eur)[names(eur) == 'medhx_ss_6r_times_p_plus1'] <- 'medhx_ss_6r_times_p'
+names(eur)[names(eur) == 'medhx_ss_6s_times_p_plus1'] <- 'medhx_ss_6s_times_p'
+names(eur)[names(eur) == 'medhx_ss_9b_p_plus1'] <- 'medhx_ss_9b_p'
+names(eur)[names(eur) == 'devhx_16_p_plus1'] <- 'devhx_16_p'
+names(eur)[names(eur) == 'bis_y_ss_basm_rr_plus1'] <- 'bis_y_ss_basm_rr'
+names(eur)[names(eur) == 'bis_y_ss_basm_drive_plus1'] <- 'bis_y_ss_basm_drive'
+names(eur)[names(eur) == 'bis_y_ss_bas_fs_plus1'] <- 'bis_y_ss_bas_fs'
+names(eur)[names(eur) == 'resiliency5a_y_plus1'] <- 'resiliency5a_y_p'
+names(eur)[names(eur) == 'resiliency6a_y_plus1'] <- 'resiliency6a_y_p'
+names(eur)[names(eur) == 'resiliency5b_y_plus1'] <- 'resiliency5b_y_p'
+names(eur)[names(eur) == 'resiliency6b_y_plus1'] <- 'resiliency6b_y_p'
+names(eur)[names(eur) == 'fes_p_ss_fc_pr_plus1'] <- 'fes_p_ss_fc_pr_p'
+names(eur)[names(eur) == 'psb_p_ss_mean_plus1'] <- 'psb_p_ss_mean'
+names(eur)[names(eur) == 'fes_y_ss_fc_pr_plus1'] <- 'fes_y_ss_fc_pr'
+names(eur)[names(eur) == 'psb_y_ss_mean_plus1'] <- 'psb_y_ss_mean'
+names(eur)[names(eur) == 'srpf_y_ss_iiss_plus1'] <- 'srpf_y_ss_iiss'
+names(eur)[names(eur) == 'stq_y_ss_weekday_plus1'] <- 'stq_y_ss_weekday'
+names(eur)[names(eur) == 'stq_y_ss_weekend_plus1'] <- 'stq_y_ss_weekend'
+
+names(female)[names(female) == 'bis_y_ss_bas_rr_plus1'] <- 'bis_y_ss_bas_rr'
+names(female)[names(female) == 'bis_y_ss_bas_drive_plus1'] <- 'bis_y_ss_bas_drive'
+names(female)[names(female) == 'pgbi_p_ss_score_plus1'] <- 'pgbi_p_ss_score'
+names(female)[names(female) == 'medhx_ss_4b_p_plus1'] <- 'medhx_ss_4b_p'
+names(female)[names(female) == 'medhx_ss_5b_p_plus1'] <- 'medhx_ss_5b_p'
+names(female)[names(female) == 'medhx_ss_6a_times_p_plus1'] <- 'medhx_ss_6a_times_p'
+names(female)[names(female) == 'medhx_ss_6b_times_p_plus1'] <- 'medhx_ss_6b_times_p'
+names(female)[names(female) == 'medhx_ss_6c_times_p_plus1'] <- 'medhx_ss_6c_times_p'
+names(female)[names(female) == 'medhx_ss_6d_times_p_plus1'] <- 'medhx_ss_6d_times_p'
+names(female)[names(female) == 'medhx_ss_6e_times_p_plus1'] <- 'medhx_ss_6e_times_p'
+names(female)[names(female) == 'medhx_ss_6f_times_p_plus1'] <- 'medhx_ss_6f_times_p'
+names(female)[names(female) == 'medhx_ss_6g_times_p_plus1'] <- 'medhx_ss_6g_times_p'
+names(female)[names(female) == 'medhx_ss_6h_times_p_plus1'] <- 'medhx_ss_6h_times_p'
+names(female)[names(female) == 'medhx_ss_6i_times_p_plus1'] <- 'medhx_ss_6i_times_p'
+names(female)[names(female) == 'medhx_ss_6j_times_p_plus1'] <- 'medhx_ss_6j_times_p'
+names(female)[names(female) == 'medhx_ss_6k_times_p_plus1'] <- 'medhx_ss_6k_times_p'
+names(female)[names(female) == 'medhx_ss_6l_times_p_plus1'] <- 'medhx_ss_6l_times_p'
+names(female)[names(female) == 'medhx_ss_6m_times_p_plus1'] <- 'medhx_ss_6m_times_p'
+names(female)[names(female) == 'medhx_ss_6n_times_p_plus1'] <- 'medhx_ss_6n_times_p'
+names(female)[names(female) == 'medhx_ss_6o_times_p_plus1'] <- 'medhx_ss_6o_times_p'
+names(female)[names(female) == 'medhx_ss_6p_times_p_plus1'] <- 'medhx_ss_6p_times_p'
+names(female)[names(female) == 'medhx_ss_6q_times_p_plus1'] <- 'medhx_ss_6q_times_p'
+names(female)[names(female) == 'medhx_ss_6r_times_p_plus1'] <- 'medhx_ss_6r_times_p'
+names(female)[names(female) == 'medhx_ss_6s_times_p_plus1'] <- 'medhx_ss_6s_times_p'
+names(female)[names(female) == 'medhx_ss_9b_p_plus1'] <- 'medhx_ss_9b_p'
+names(female)[names(female) == 'devhx_16_p_plus1'] <- 'devhx_16_p'
+names(female)[names(female) == 'bis_y_ss_basm_rr_plus1'] <- 'bis_y_ss_basm_rr'
+names(female)[names(female) == 'bis_y_ss_basm_drive_plus1'] <- 'bis_y_ss_basm_drive'
+names(female)[names(female) == 'bis_y_ss_bas_fs_plus1'] <- 'bis_y_ss_bas_fs'
+names(female)[names(female) == 'resiliency5a_y_plus1'] <- 'resiliency5a_y_p'
+names(female)[names(female) == 'resiliency6a_y_plus1'] <- 'resiliency6a_y_p'
+names(female)[names(female) == 'resiliency5b_y_plus1'] <- 'resiliency5b_y_p'
+names(female)[names(female) == 'resiliency6b_y_plus1'] <- 'resiliency6b_y_p'
+names(female)[names(female) == 'fes_p_ss_fc_pr_plus1'] <- 'fes_p_ss_fc_pr_p'
+names(female)[names(female) == 'psb_p_ss_mean_plus1'] <- 'psb_p_ss_mean'
+names(female)[names(female) == 'fes_y_ss_fc_pr_plus1'] <- 'fes_y_ss_fc_pr'
+names(female)[names(female) == 'psb_y_ss_mean_plus1'] <- 'psb_y_ss_mean'
+names(female)[names(female) == 'srpf_y_ss_iiss_plus1'] <- 'srpf_y_ss_iiss'
+names(female)[names(female) == 'stq_y_ss_weekday_plus1'] <- 'stq_y_ss_weekday'
+names(female)[names(female) == 'stq_y_ss_weekend_plus1'] <- 'stq_y_ss_weekend'
+
+names(male)[names(male) == 'bis_y_ss_bas_rr_plus1'] <- 'bis_y_ss_bas_rr'
+names(male)[names(male) == 'bis_y_ss_bas_drive_plus1'] <- 'bis_y_ss_bas_drive'
+names(male)[names(male) == 'pgbi_p_ss_score_plus1'] <- 'pgbi_p_ss_score'
+names(male)[names(male) == 'medhx_ss_4b_p_plus1'] <- 'medhx_ss_4b_p'
+names(male)[names(male) == 'medhx_ss_5b_p_plus1'] <- 'medhx_ss_5b_p'
+names(male)[names(male) == 'medhx_ss_6a_times_p_plus1'] <- 'medhx_ss_6a_times_p'
+names(male)[names(male) == 'medhx_ss_6b_times_p_plus1'] <- 'medhx_ss_6b_times_p'
+names(male)[names(male) == 'medhx_ss_6c_times_p_plus1'] <- 'medhx_ss_6c_times_p'
+names(male)[names(male) == 'medhx_ss_6d_times_p_plus1'] <- 'medhx_ss_6d_times_p'
+names(male)[names(male) == 'medhx_ss_6e_times_p_plus1'] <- 'medhx_ss_6e_times_p'
+names(male)[names(male) == 'medhx_ss_6f_times_p_plus1'] <- 'medhx_ss_6f_times_p'
+names(male)[names(male) == 'medhx_ss_6g_times_p_plus1'] <- 'medhx_ss_6g_times_p'
+names(male)[names(male) == 'medhx_ss_6h_times_p_plus1'] <- 'medhx_ss_6h_times_p'
+names(male)[names(male) == 'medhx_ss_6i_times_p_plus1'] <- 'medhx_ss_6i_times_p'
+names(male)[names(male) == 'medhx_ss_6j_times_p_plus1'] <- 'medhx_ss_6j_times_p'
+names(male)[names(male) == 'medhx_ss_6k_times_p_plus1'] <- 'medhx_ss_6k_times_p'
+names(male)[names(male) == 'medhx_ss_6l_times_p_plus1'] <- 'medhx_ss_6l_times_p'
+names(male)[names(male) == 'medhx_ss_6m_times_p_plus1'] <- 'medhx_ss_6m_times_p'
+names(male)[names(male) == 'medhx_ss_6n_times_p_plus1'] <- 'medhx_ss_6n_times_p'
+names(male)[names(male) == 'medhx_ss_6o_times_p_plus1'] <- 'medhx_ss_6o_times_p'
+names(male)[names(male) == 'medhx_ss_6p_times_p_plus1'] <- 'medhx_ss_6p_times_p'
+names(male)[names(male) == 'medhx_ss_6q_times_p_plus1'] <- 'medhx_ss_6q_times_p'
+names(male)[names(male) == 'medhx_ss_6r_times_p_plus1'] <- 'medhx_ss_6r_times_p'
+names(male)[names(male) == 'medhx_ss_6s_times_p_plus1'] <- 'medhx_ss_6s_times_p'
+names(male)[names(male) == 'medhx_ss_9b_p_plus1'] <- 'medhx_ss_9b_p'
+names(male)[names(male) == 'devhx_16_p_plus1'] <- 'devhx_16_p'
+names(male)[names(male) == 'bis_y_ss_basm_rr_plus1'] <- 'bis_y_ss_basm_rr'
+names(male)[names(male) == 'bis_y_ss_basm_drive_plus1'] <- 'bis_y_ss_basm_drive'
+names(male)[names(male) == 'bis_y_ss_bas_fs_plus1'] <- 'bis_y_ss_bas_fs'
+names(male)[names(male) == 'resiliency5a_y_plus1'] <- 'resiliency5a_y_p'
+names(male)[names(male) == 'resiliency6a_y_plus1'] <- 'resiliency6a_y_p'
+names(male)[names(male) == 'resiliency5b_y_plus1'] <- 'resiliency5b_y_p'
+names(male)[names(male) == 'resiliency6b_y_plus1'] <- 'resiliency6b_y_p'
+names(male)[names(male) == 'fes_p_ss_fc_pr_plus1'] <- 'fes_p_ss_fc_pr_p'
+names(male)[names(male) == 'psb_p_ss_mean_plus1'] <- 'psb_p_ss_mean'
+names(male)[names(male) == 'fes_y_ss_fc_pr_plus1'] <- 'fes_y_ss_fc_pr'
+names(male)[names(male) == 'psb_y_ss_mean_plus1'] <- 'psb_y_ss_mean'
+names(male)[names(male) == 'srpf_y_ss_iiss_plus1'] <- 'srpf_y_ss_iiss'
+names(male)[names(male) == 'stq_y_ss_weekday_plus1'] <- 'stq_y_ss_weekday'
+names(male)[names(male) == 'stq_y_ss_weekend_plus1'] <- 'stq_y_ss_weekend'
+```
+
+## PheWAS - All Subjects #
+```{r}
+bl <- colorRampPalette(c("navy","royalblue","lightskyblue"))(200)                       
+re <- colorRampPalette(c("mistyrose", "red2","darkred"))(200)
+
+# PheWAS - multiethnic cohort
+datalist <- list(abcdData_Y1Followup_C4_filtered)
+names(datalist) <- c("abcdData_Y1Followup_C4_filtered")
+
+# Linear model
+for (j in 1:length(datalist)) {
+df.linear <- data.frame() 
+  for (i in c(72, 2503:2505)) {
+    this_var = datalist[[j]][, i]
+    my.model.0 <- lm(as.matrix(this_var) ~ c4b_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit)
+    my.model.1 <- lm(as.matrix(this_var) ~ c4a_expression +  
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit)
+    my.model <- lm(as.matrix(this_var) ~ c4a_expression + c4b_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit)
+    p1 <- anova(my.model.0, my.model, test = "F")
+    p2 <- anova(my.model.1, my.model, test = "F")
+    df.linear <- rbind(df.linear, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(my.model),
+                               beta_C4A = summary(my.model)$coefficients[2, 1],
+                               beta_C4B = summary(my.model)$coefficients[3, 1],
+                               stderr_C4A = summary(my.model)$coefficients[2, 2],
+                               stderr_C4B = summary(my.model)$coefficients[3, 2],
+                               P_C4A = p1[2, 6],
+                               P_C4B = p2[2, 6]))
+ 
+     }
+
+# Gamma log-link
+df.gamma <- data.frame() 
+  for (i in c(10:16, 39, 41, 62:71, 73:81, 281:284, 286, 2560, 2591:2597)) { 
+    this_var = datalist[[j]][, i]
+    my.model.0 <- glm(as.matrix(this_var) ~ c4b_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit, family = Gamma(link = "log"))
+    my.model.1 <- glm(as.matrix(this_var) ~ c4a_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit, family = Gamma(link = "log"))
+    my.model <- glm(as.matrix(this_var) ~ c4a_expression + c4b_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit, family = Gamma(link = "log"))
+    p1 <- anova(my.model.0, my.model, test = "F")
+    p2 <- anova(my.model.1, my.model, test = "F")
+    df.gamma <- rbind(df.gamma, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(my.model),
+                               beta_C4A = summary(my.model)$coefficients[2, 1],
+                               beta_C4B = summary(my.model)$coefficients[3, 1],
+                               stderr_C4A = summary(my.model)$coefficients[2, 2],
+                               stderr_C4B = summary(my.model)$coefficients[3, 2],
+                               P_C4A = p1[2, 6],
+                               P_C4B = p2[2, 6]))
+ 
+  }
+
+# Logistic
+df.logistic <- data.frame() 
+    for (i in c(98, 101, 134:135, 137:138, 251, 261:262, 250, 252, 263:264)) {
+    this_var = datalist[[j]][, i]
+    my.model.0 <- glm(as.matrix(this_var) ~ c4b_expression + 
+                        interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + site_id_l, 
+                      data = datalist[[j]], na.action = na.omit, family = "binomial")  
+    my.model.1 <- glm(as.matrix(this_var) ~ c4a_expression +  
+                        interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + site_id_l, 
+                      data = datalist[[j]], na.action = na.omit, family = "binomial")  
+    my.model <- glm(as.matrix(this_var) ~ c4a_expression + c4b_expression + 
+                        interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + site_id_l, 
+                      data = datalist[[j]], na.action = na.omit, family = "binomial")  
+    p1 <- anova(my.model.0, my.model, test = "Chisq")
+    p2 <- anova(my.model.1, my.model, test = "Chisq")
+    df.logistic <- rbind(df.logistic, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(my.model),
+                               beta_C4A = summary(my.model)$coefficients[2, 1],
+                               beta_C4B = summary(my.model)$coefficients[3, 1],
+                               stderr_C4A = summary(my.model)$coefficients[2, 2],
+                               stderr_C4B = summary(my.model)$coefficients[3, 2],
+                               P_C4A = p1[2, 5],
+                               P_C4B = p2[2, 5]))
+    }
+    
+# Psychosis Gamma log-link
+df.psychosis.gamma <- data.frame() 
+  for (i in c(2499:2500)) { 
+    this_var = datalist[[j]][, i]
+    my.model.0 <- glm(as.matrix(this_var) ~ c4b_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit, family = Gamma(link = "log"))
+    my.model.1 <- glm(as.matrix(this_var) ~ c4a_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit, family = Gamma(link = "log"))
+    my.model <- glm(as.matrix(this_var) ~ c4a_expression + c4b_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit, family = Gamma(link = "log"))
+    p1 <- anova(my.model.0, my.model, test = "F")
+    p2 <- anova(my.model.1, my.model, test = "F")
+    df.psychosis.gamma <- rbind(df.psychosis.gamma, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(my.model),
+                               beta_C4A = summary(my.model)$coefficients[2, 1],
+                               beta_C4B = summary(my.model)$coefficients[3, 1],
+                               stderr_C4A = summary(my.model)$coefficients[2, 2],
+                               stderr_C4B = summary(my.model)$coefficients[3, 2],
+                               P_C4A = p1[2, 6],
+                               P_C4B = p2[2, 6]))
+ 
+  }
+
+# Psychosis Logistic
+df.psychosis.logistic <- data.frame() 
+    my.model.0 <- glm(Psychosis_wPQ_susp ~ c4b_expression  + 
+                        interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + site_id_l, 
+                      data = datalist[[j]], na.action = na.omit, family = "binomial")  
+    my.model.1 <- glm(Psychosis_wPQ_susp ~ c4a_expression + 
+                        interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + site_id_l, 
+                      data = datalist[[j]], na.action = na.omit, family = "binomial")  
+    my.model <- glm(Psychosis_wPQ_susp ~ c4a_expression + c4b_expression + 
+                        interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + sex + site_id_l, 
+                      data = datalist[[j]], na.action = na.omit, family = "binomial")  
+    p1 <- anova(my.model.0, my.model, test = "Chisq")
+    p2 <- anova(my.model.1, my.model, test = "Chisq")
+    df.psychosis.logistic <- rbind(df.psychosis.logistic, data.frame(data = names(datalist)[j],
+                               ID = "Psychosis_wPQ_susp", 
+                               N = nobs(my.model),
+                               beta_C4A = summary(my.model)$coefficients[2, 1],
+                               beta_C4B = summary(my.model)$coefficients[3, 1],
+                               stderr_C4A = summary(my.model)$coefficients[2, 2],
+                               stderr_C4B = summary(my.model)$coefficients[3, 2],
+                               P_C4A = p1[2, 5],
+                               P_C4B = p2[2, 5]))
+}
+  
+df.by.ancestry <- rbind(df.linear, df.gamma)
+df.by.ancestry <- rbind(df.by.ancestry, df.logistic)
+df.by.ancestry <- rbind(df.by.ancestry, df.psychosis.gamma)
+df.by.ancestry <- rbind(df.by.ancestry, df.psychosis.logistic)
+df.by.ancestry$FDR_C4A <- p.adjust(df.by.ancestry$P_C4A,'fdr')
+df.by.ancestry$FDR_C4B <- p.adjust(df.by.ancestry$P_C4B,'fdr')
+df.by.ancestry$Category <- ifelse(df.by.ancestry$ID %in% c("nihtbx_picvocab_fc", "nihtbx_flanker_fc", "nihtbx_list_fc", "nihtbx_cardsort_fc", "nihtbx_pattern_fc", "nihtbx_picture_fc", "nihtbx_reading_fc", "nihtbx_fluidcomp_fc", "nihtbx_cryst_fc", "nihtbx_totalcomp_fc", "lmt_scr_perc_correct", "pea_wiscv_tss"), "Cognition", ifelse(df.by.ancestry$ID %in% c("anthro_waist_cm", "anthroheightcalc", "anthroweightcalc"), "Anthropometrics", ifelse(df.by.ancestry$ID %in% c("bis_y_ss_bas_drive", "bis_y_ss_bas_fs", "bis_y_ss_bas_fs", "bis_y_ss_bas_rr", "bis_y_ss_basm_drive", "bis_y_ss_basm_rr", "bis_y_ss_bism_sum"), "BIS/BAS", ifelse(df.by.ancestry$ID %in% c("bpm_t_scr_attention_t", "bpm_t_scr_external_t", "bpm_t_scr_internal_t", "bpm_t_scr_totalprob_t"), "BRIEF",ifelse(df.by.ancestry$ID %in% c("cbcl_scr_07_ocd_t", "cbcl_scr_07_sct_t", "cbcl_scr_07_stress_t", "cbcl_scr_dsm5_adhd_t", "cbcl_scr_dsm5_anxdisord_t", "cbcl_scr_dsm5_conduct_t", "cbcl_scr_dsm5_depress_t", "cbcl_scr_dsm5_opposit_t", "cbcl_scr_dsm5_somaticpr_t", "cbcl_scr_syn_aggressive_t", "cbcl_scr_syn_anxdep_t", "cbcl_scr_syn_attention_t", "cbcl_scr_syn_external_t", "cbcl_scr_syn_internal_t", "cbcl_scr_syn_rulebreak_t", "cbcl_scr_syn_social_t", "cbcl_scr_syn_somatic_t", "cbcl_scr_syn_thought_t", "cbcl_scr_syn_totprob_t", "cbcl_scr_syn_withdep_t"), "CBCL", ifelse(df.by.ancestry$ID %in% c("devhx_16_p", "devhx_20_p", "devhx_21_p"), "Dev History", ifelse(df.by.ancestry$ID %in% c("fes_p_ss_fc_pr_p", "fes_y_ss_fc_pr", "latent_factor_ss_general_ses", "latent_factor_ss_perinatal", "latent_factor_ss_social", "srpf_y_ss_iiss", "stq_y_ss_weekday", "stq_y_ss_weekend"), "Environment", ifelse(df.by.ancestry$ID %in% c("hormone_scr_dhea_mean", "hormone_scr_ert_mean", "pds_p_ss_all_category_2", "hormone_scr_hse_mean"), "Hormones/Puberty", ifelse(df.by.ancestry$ID %in% c("ksads_1_842_p", "ksads_1_842_t", "ksads_1_847_p", "ksads_1_847_t", "ksads_10_869_p", "ksads_10_870_p", "ksads_10_914_p", "ksads_10_914_t", "ksads_11_917_p", "ksads_11_918_p", "ksads_11_919_p", "ksads_11_920_p", "ksads_14_853_p", "ksads_14_854_p", "ksads_14_855_p", "ksads_15_901_p", "ksads_15_902_p", "ksads_16_897_p", "ksads_16_899_p", "ksads_18_903_p", "ksads_2_833_p", "ksads_2_833_t", "ksads_2_837_p", "ksads_2_837_t", "ksads_2_839_p", "ksads_2_839_t", "ksads_23_945_p", "ksads_23_945_t", "ksads_23_946_t", "ksads_23_947_p", "ksads_23_947_t", "ksads_23_956_p", "ksads_23_956_t", "ksads_23_957_p", "ksads_23_957_t", "ksads_23_958_p", "ksads_23_958_t", "ksads_23_959_t", "ksads_4_829_p", "ksads_4_849_p", "ksads_7_862_p", "ksads_7_910_p", "ksads_8_863_p", "ksads_8_864_p", "ksads_8_912_p", "ksads_8_912_t", "ksads_9_867_p", "ksads_9_868_p"), "KSADS", ifelse(df.by.ancestry$ID %in% c("medhx_ss_4b_p", "medhx_ss_5b_p", "medhx_ss_6a_times_p", "medhx_ss_6b_times_p", "medhx_ss_6c_times_p", "medhx_ss_6d_times_p", "medhx_ss_6e_times_p", "medhx_ss_6f_times_p", "medhx_ss_6g_times_p", "medhx_ss_6h_times_p", "medhx_ss_6i_times_p", "medhx_ss_6j_times_p", "medhx_ss_6k_times_p", "medhx_ss_6l_times_p", "medhx_ss_6m_times_p", "medhx_ss_6n_times_p", "medhx_ss_6o_times_p", "medhx_ss_6p_times_p", "medhx_ss_6q_times_p", "medhx_ss_6s_times_p", "medhx_ss_9b_p"), "Medical History", ifelse(df.by.ancestry$ID %in% c("pgbi_p_ss_score", "upps_y_ss_lack_of_perseverance", "upps_y_ss_lack_of_planning", "upps_y_ss_negative_urgency", "upps_y_ss_positive_urgency", "upps_y_ss_sensation_seeking"), "Implusivity", ifelse(df.by.ancestry$ID %in% c("psb_p_ss_mean", "psb_y_ss_mean", "resiliency5a_y_p", "resiliency5b_y_p", "resiliency6a_y_p", "resiliency6b_y_p", "ssrs_p_ss_sum"), "Social Behavior", ifelse(df.by.ancestry$ID %in% c("sds_p_ss_da", "sds_p_ss_dims", "sds_p_ss_does", "sds_p_ss_sbd", "sds_p_ss_shy", "sds_p_ss_swtd", "sds_p_ss_total"), "Sleep", ifelse(df.by.ancestry$ID %in% c("pps_y_ss_number_plus1", "pps_y_ss_severity_score_plus1", "Psychosis_wPQ_susp"), "Psychosis", 0))))))))))))))
+
+print(df.by.ancestry)
+
+df.by.ancestry$Direction <- ifelse(df.by.ancestry$beta_C4A >= 0, "Positive", "Negative")
+
+plot <- ggplot(df.by.ancestry, aes(x=Category, y=-log10(P_C4A), shape=Direction)) + 
+  geom_point(aes(col=Category, size=abs(beta_C4A), fill=Category)) + 
+  scale_shape_manual(values=c(25,24)) +
+  theme_classic() + 
+  theme(axis.text.x = element_blank(), axis.ticks=element_blank()) + 
+  labs(color="Category", size="Abs. Beta", x="Phenotypes", y="-log10(P)") + 
+  geom_text_repel(data=. %>% 
+                    mutate(label = ifelse(P_C4A < 0.05, as.character(ID), "")),
+                  aes(label=label),
+                  size=3,
+                  box.padding = 1,
+                  force = 1,
+                  force_pull = 1,
+                  min.segment.length = 0,
+                  point.padding = 0,
+                  direction = "both",
+                  segment.linetype = 6,
+                  segment.color = "gray",
+                  segment.curvature = -1e-20,
+                  arrow = arrow(length = unit(0.015, "npc")),
+                  max.overlaps = Inf
+  ) + 
+  geom_hline(yintercept=-log10(0.05), color="red", size=1, alpha=0.3, linetype="dashed") +
+  ggtitle("C4A PheWAS")
+print(plot + ylim(0, 5))
+```
+
+## PheWAS - by sex #
+```{r}
+# Association by sex
+datalist <- list(female, male)
+names(datalist) <- c("female", "male")
+
+# Linear model
+for (j in 1:length(datalist)) {
+df.linear <- data.frame() 
+  for (i in c(72, 2503:2505)) {
+    this_var = datalist[[j]][, i]
+    my.model.0 <- lm(as.matrix(this_var) ~ c4b_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit)
+    my.model.1 <- lm(as.matrix(this_var) ~ c4a_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit)
+    my.model <- lm(as.matrix(this_var) ~ c4a_expression + c4b_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit)
+    p1 <- anova(my.model.0, my.model, test = "F")
+    p2 <- anova(my.model.1, my.model, test = "F")
+    df.linear <- rbind(df.linear, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(my.model),
+                               beta_C4A = summary(my.model)$coefficients[2, 1],
+                               beta_C4B = summary(my.model)$coefficients[3, 1],
+                               stderr_C4A = summary(my.model)$coefficients[2, 2],
+                               stderr_C4B = summary(my.model)$coefficients[3, 2],
+                               P_C4A = p1[2, 6],
+                               P_C4B = p2[2, 6]))
+  }
+
+
+# Gamma log-link
+df.gamma1 <- data.frame() 
+    for (i in c(10:16, 39, 41, 62:71, 73:81, 281:284, 286, 2560, 2591:2597)) { 
+    this_var = datalist[[j]][, i]
+    my.model.0 <- glm(as.matrix(this_var) ~ c4b_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit, family = Gamma(link = "log"))
+    my.model.1 <- glm(as.matrix(this_var) ~ c4a_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit, family = Gamma(link = "log"))
+    my.model <- glm(as.matrix(this_var) ~ c4a_expression + c4b_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit, family = Gamma(link = "log"))
+    p1 <- anova(my.model.0, my.model, test = "F")
+    p2 <- anova(my.model.1, my.model, test = "F")
+    df.gamma1 <- rbind(df.gamma1, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(my.model),
+                               beta_C4A = summary(my.model)$coefficients[2, 1],
+                               beta_C4B = summary(my.model)$coefficients[3, 1],
+                               stderr_C4A = summary(my.model)$coefficients[2, 2],
+                               stderr_C4B = summary(my.model)$coefficients[3, 2],
+                               P_C4A = p1[2, 6],
+                               P_C4B = p2[2, 6]))
+  }
+
+# Logistic
+df.logistic <- data.frame() 
+    for (i in c(98, 101, 134:135, 137, 138, 251, 261:262, 250, 252, 263:264)) {
+    this_var = datalist[[j]][, i]
+    my.model.0 <- glm(as.matrix(this_var) ~ c4b_expression + 
+                        interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + site_id_l, 
+                      data = datalist[[j]], na.action = na.omit, family = "binomial")  
+    my.model.1 <- glm(as.matrix(this_var) ~ c4a_expression + 
+                        interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + site_id_l, 
+                      data = datalist[[j]], na.action = na.omit, family = "binomial")  
+    my.model <- glm(as.matrix(this_var) ~ c4a_expression + c4b_expression + 
+                        interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + site_id_l, 
+                      data = datalist[[j]], na.action = na.omit, family = "binomial")  
+    p1 <- anova(my.model.0, my.model, test = "Chisq")
+    p2 <- anova(my.model.1, my.model, test = "Chisq")
+    df.logistic <- rbind(df.logistic, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(my.model),
+                               beta_C4A = summary(my.model)$coefficients[2, 1],
+                               beta_C4B = summary(my.model)$coefficients[3, 1],
+                               stderr_C4A = summary(my.model)$coefficients[2, 2],
+                               stderr_C4B = summary(my.model)$coefficients[3, 2],
+                               P_C4A = p1[2, 5],
+                               P_C4B = p2[2, 5]))
+    }
+
+    
+# Psychosis Gamma log-link
+df.psychosis.gamma <- data.frame() 
+  for (i in c(2499:2500)) { 
+    this_var = datalist[[j]][, i]
+    my.model.0 <- glm(as.matrix(this_var) ~ c4b_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit, family = Gamma(link = "log"))
+    my.model.1 <- glm(as.matrix(this_var) ~ c4a_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit, family = Gamma(link = "log"))
+    my.model <- glm(as.matrix(this_var) ~ c4a_expression + c4b_expression + 
+                      interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + site_id_l, 
+                    data = datalist[[j]], na.action = na.omit, family = Gamma(link = "log"))
+    p1 <- anova(my.model.0, my.model, test = "F")
+    p2 <- anova(my.model.1, my.model, test = "F")
+    df.psychosis.gamma <- rbind(df.psychosis.gamma, data.frame(data = names(datalist)[j],
+                               ID = colnames(datalist[[j]])[i], 
+                               N = nobs(my.model),
+                               beta_C4A = summary(my.model)$coefficients[2, 1],
+                               beta_C4B = summary(my.model)$coefficients[3, 1],
+                               stderr_C4A = summary(my.model)$coefficients[2, 2],
+                               stderr_C4B = summary(my.model)$coefficients[3, 2],
+                               P_C4A = p1[2, 6],
+                               P_C4B = p2[2, 6]))
+ 
+  }
+
+# Psychosis Logistic
+df.psychosis.logistic <- data.frame() 
+    my.model.0 <- glm(Psychosis_wPQ_susp ~ c4b_expression  + 
+                        interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + site_id_l, 
+                      data = datalist[[j]], na.action = na.omit, family = "binomial")  
+    my.model.1 <- glm(Psychosis_wPQ_susp ~ c4a_expression + 
+                        interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + site_id_l, 
+                      data = datalist[[j]], na.action = na.omit, family = "binomial")  
+    my.model <- glm(Psychosis_wPQ_susp ~ c4a_expression  + c4b_expression  + 
+                        interview_age + ses_AvgIncomeParentEdu + pc1 + pc2 + pc3 + pc4 + site_id_l, 
+                      data = datalist[[j]], na.action = na.omit, family = "binomial")  
+    p1 <- anova(my.model.0, my.model, test = "Chisq")
+    p2 <- anova(my.model.1, my.model, test = "Chisq")
+    df.psychosis.logistic <- rbind(df.psychosis.logistic, data.frame(data = names(datalist)[j],
+                               ID = "Psychosis_wPQ_susp", 
+                               N = nobs(my.model),
+                               beta_C4A = summary(my.model)$coefficients[2, 1],
+                               beta_C4B = summary(my.model)$coefficients[3, 1],
+                               stderr_C4A = summary(my.model)$coefficients[2, 2],
+                               stderr_C4B = summary(my.model)$coefficients[3, 2],
+                               P_C4A = p1[2, 5],
+                               P_C4B = p2[2, 5]))
+
+
+df.sex <- rbind(df.linear, df.gamma1)
+df.sex <- rbind(df.sex, df.logistic)
+df.sex <- rbind(df.sex, df.psychosis.gamma)
+df.sex <- rbind(df.sex, df.psychosis.logistic)
+df.sex$FDR_C4A <- p.adjust(df.sex$P_C4A,'fdr')
+df.sex$FDR_C4B <- p.adjust(df.sex$P_C4B,'fdr')
+df.sex$Category <- ifelse(df.sex$ID %in% c("nihtbx_picvocab_fc", "nihtbx_flanker_fc", "nihtbx_list_fc", "nihtbx_cardsort_fc", "nihtbx_pattern_fc", "nihtbx_picture_fc", "nihtbx_reading_fc", "nihtbx_fluidcomp_fc", "nihtbx_cryst_fc", "nihtbx_totalcomp_fc", "lmt_scr_perc_correct", "pea_wiscv_tss"), "Cognition", ifelse(df.sex$ID %in% c("anthro_waist_cm", "anthroheightcalc", "anthroweightcalc"), "Anthropometrics", ifelse(df.sex$ID %in% c("bis_y_ss_bas_drive", "bis_y_ss_bas_fs", "bis_y_ss_bas_fs", "bis_y_ss_bas_rr", "bis_y_ss_basm_drive", "bis_y_ss_basm_rr", "bis_y_ss_bism_sum"), "BIS/BAS", ifelse(df.sex$ID %in% c("bpm_t_scr_attention_t", "bpm_t_scr_external_t", "bpm_t_scr_internal_t", "bpm_t_scr_totalprob_t"), "BRIEF",ifelse(df.sex$ID %in% c("cbcl_scr_07_ocd_t", "cbcl_scr_07_sct_t", "cbcl_scr_07_stress_t", "cbcl_scr_dsm5_adhd_t", "cbcl_scr_dsm5_anxdisord_t", "cbcl_scr_dsm5_conduct_t", "cbcl_scr_dsm5_depress_t", "cbcl_scr_dsm5_opposit_t", "cbcl_scr_dsm5_somaticpr_t", "cbcl_scr_syn_aggressive_t", "cbcl_scr_syn_anxdep_t", "cbcl_scr_syn_attention_t", "cbcl_scr_syn_external_t", "cbcl_scr_syn_internal_t", "cbcl_scr_syn_rulebreak_t", "cbcl_scr_syn_social_t", "cbcl_scr_syn_somatic_t", "cbcl_scr_syn_thought_t", "cbcl_scr_syn_totprob_t", "cbcl_scr_syn_withdep_t"), "CBCL", ifelse(df.sex$ID %in% c("devhx_16_p", "devhx_20_p", "devhx_21_p"), "Dev History", ifelse(df.sex$ID %in% c("fes_p_ss_fc_pr_p", "fes_y_ss_fc_pr", "latent_factor_ss_general_ses", "latent_factor_ss_perinatal", "latent_factor_ss_social", "srpf_y_ss_iiss", "stq_y_ss_weekday", "stq_y_ss_weekend"), "Environment", ifelse(df.sex$ID %in% c("hormone_scr_dhea_mean", "hormone_scr_ert_mean", "pds_p_ss_all_category_2", "hormone_scr_hse_mean"), "Hormones/Puberty", ifelse(df.sex$ID %in% c("ksads_1_842_p", "ksads_1_842_t", "ksads_1_847_p", "ksads_1_847_t", "ksads_10_869_p", "ksads_10_870_p", "ksads_10_914_p", "ksads_10_914_t", "ksads_11_917_p", "ksads_11_918_p", "ksads_11_919_p", "ksads_11_920_p", "ksads_14_853_p", "ksads_14_854_p", "ksads_14_855_p", "ksads_15_901_p", "ksads_15_902_p", "ksads_16_897_p", "ksads_16_899_p", "ksads_18_903_p", "ksads_2_833_p", "ksads_2_833_t", "ksads_2_837_p", "ksads_2_837_t", "ksads_2_839_p", "ksads_2_839_t", "ksads_23_945_p", "ksads_23_945_t", "ksads_23_946_t", "ksads_23_947_p", "ksads_23_947_t", "ksads_23_956_p", "ksads_23_956_t", "ksads_23_957_p", "ksads_23_957_t", "ksads_23_958_p", "ksads_23_958_t", "ksads_23_959_t", "ksads_4_829_p", "ksads_4_849_p", "ksads_7_862_p", "ksads_7_910_p", "ksads_8_863_p", "ksads_8_864_p", "ksads_8_912_p", "ksads_8_912_t", "ksads_9_867_p", "ksads_9_868_p"), "KSADS", ifelse(df.sex$ID %in% c("medhx_ss_4b_p", "medhx_ss_5b_p", "medhx_ss_6a_times_p", "medhx_ss_6b_times_p", "medhx_ss_6c_times_p", "medhx_ss_6d_times_p", "medhx_ss_6e_times_p", "medhx_ss_6f_times_p", "medhx_ss_6g_times_p", "medhx_ss_6h_times_p", "medhx_ss_6i_times_p", "medhx_ss_6j_times_p", "medhx_ss_6k_times_p", "medhx_ss_6l_times_p", "medhx_ss_6m_times_p", "medhx_ss_6n_times_p", "medhx_ss_6o_times_p", "medhx_ss_6p_times_p", "medhx_ss_6q_times_p", "medhx_ss_6s_times_p", "medhx_ss_9b_p"), "Medical History", ifelse(df.sex$ID %in% c("pgbi_p_ss_score", "upps_y_ss_lack_of_perseverance", "upps_y_ss_lack_of_planning", "upps_y_ss_negative_urgency", "upps_y_ss_positive_urgency", "upps_y_ss_sensation_seeking"), "Implusivity", ifelse(df.sex$ID %in% c("psb_p_ss_mean", "psb_y_ss_mean", "resiliency5a_y_p", "resiliency5b_y_p", "resiliency6a_y_p", "resiliency6b_y_p", "ssrs_p_ss_sum"), "Social Behavior", ifelse(df.sex$ID %in% c("sds_p_ss_da", "sds_p_ss_dims", "sds_p_ss_does", "sds_p_ss_sbd", "sds_p_ss_shy", "sds_p_ss_swtd", "sds_p_ss_total"), "Sleep", ifelse(df.sex$ID %in% c("pps_y_ss_number_plus1", "pps_y_ss_severity_score_plus1", "Psychosis_wPQ_susp"), "Psychosis", 0))))))))))))))
+
+print(df.sex)
+
+df.sex$Direction <- ifelse(df.sex$beta_C4A >= 0, "Positive", "Negative")
+
+plot <- ggplot(df.sex, aes(x=Category, y=-log10(P_C4A), shape=Direction)) + 
+  geom_point(aes(col=Category, size=abs(beta_C4A), fill=Category)) + 
+  scale_shape_manual(values=c(25,24)) +
+  theme_classic() + 
+  theme(axis.text.x = element_blank(), axis.ticks=element_blank()) + 
+  labs(color="Category", size="Abs. Beta", x="Phenotypes", y="-log10(P)") + 
+  geom_text_repel(data=. %>% 
+                    mutate(label = ifelse(P_C4A < 0.05, as.character(ID), "")),
+                  aes(label=label),
+                  size=3,
+                  box.padding = 1,
+                  force = 1,
+                  force_pull = 1,
+                  min.segment.length = 0,
+                  point.padding = 0,
+                  direction = "both",
+                  segment.linetype = 6,
+                  segment.color = "gray",
+                  segment.curvature = -1e-20,
+                  arrow = arrow(length = unit(0.015, "npc")),
+                  max.overlaps = Inf
+  ) + 
+  geom_hline(yintercept=-log10(0.05), color="red", size=1, alpha=0.3, linetype="dashed") +
+  ggtitle("C4A PheWAS")
+print(plot + ylim(0, 5))
+}
+```
+

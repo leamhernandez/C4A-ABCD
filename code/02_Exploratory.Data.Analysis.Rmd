@@ -1,0 +1,178 @@
+---
+title: "02_Exploratory.Data.Analysis"
+output: html_document
+---
+
+## Install packages #
+```{r}
+rm(list = ls())
+options(stringsAsFactors = FALSE)
+
+library(tidyverse)
+library(ordinal)
+library(ggridges)
+```
+
+## Load data #
+```{r}
+## Load the data
+load("ABCD.Release.3.0.C4.Merged.Data.PhewasVars.Rda")
+```
+
+## Filter to baseline #
+```{r}
+abcdData_baseline <- abcdData[abcdData$eventname == 'baseline_year_1_arm_1',]
+```
+
+## Filter to participants with C4 data #
+```{r}
+completeFun <- function(data, desiredCols) {
+  completeVec <- complete.cases(data[, desiredCols])
+  return(data[completeVec, ])
+}
+
+abcdData_baseline_C4 <- completeFun(abcdData_baseline, "c4a_total")
+
+abcdData_baseline_C4 %>% group_by(ethnicity) %>% tally() 
+```
+
+## Filter data by ancestry #
+```{r}
+abcdData_baseline_C4_filtered <- abcdData_baseline_C4 %>% filter(ethnicity %in% c("AFR", "AMR", "EUR"))
+abcdData_baseline_C4_filtered %>% group_by(ethnicity) %>% tally() 
+
+abcdData_baseline_C4_filtered %>% group_by(rel_family_id) %>% tally() %>% arrange(desc(n))  
+```
+
+## Update labels #
+```{r}
+abcdData_baseline_C4_filtered$ethnicity <- as.factor(abcdData_baseline_C4_filtered$ethnicity)
+levels(abcdData_baseline_C4_filtered$ethnicity)
+levels(abcdData_baseline_C4_filtered$ethnicity) <- list (Latinx = "AMR", EUR = "EUR", AFR = "AFR")
+levels(abcdData_baseline_C4_filtered$ethnicity)
+```
+
+## Plot C4A/C4B count/dosage/expression by ethnicity #
+```{r}
+my.plot <- hist.plot <- abcdData_baseline_C4_filtered %>%
+    ggplot(aes(x=c4a_total, fill=ethnicity)) +
+    geom_histogram(color="black", alpha=0.6) + 
+    xlim(-1, 5) +
+    labs(x="Number of C4A Copies", y = "Count", fill = "Ancestry") +
+  theme_bw() + theme(axis.ticks=element_blank())
+plot1 <- my.plot + facet_grid(~ethnicity) + theme(legend.position="bottom", strip.background = element_blank(), panel.border=element_blank())
+ggsave(plot1, file = '../results/SuppFig2_Count_C4A.Ancestry.pdf', device = cairo_pdf, width = 5, height=4, units = 'in')
+
+my.plot <- hist.plot <- abcdData_baseline_C4_filtered %>%
+    ggplot(aes(x=c4b_total, fill=ethnicity)) +
+    geom_histogram(color="black", alpha=0.6) + 
+    xlim(-1, 5) +
+    labs(x="Number of C4B Copies", y = "Count", fill = "Ancestry") +
+  theme_bw()  + theme(axis.ticks=element_blank())
+plot1 <- my.plot + facet_grid(~ethnicity) + theme(legend.position="bottom", strip.background = element_blank(), panel.border=element_blank())
+ggsave(plot1, file = '../results/SuppFig2_Count_C4B.Ancestry.pdf', device = cairo_pdf, width = 5, height=4, units = 'in')
+```
+
+## Filter to 4 most commmon #
+```{r}
+abcdData_baseline_C4_filtered <- abcdData_baseline_C4_filtered %>%
+  filter(c4_allele1_structure %in% c("AL","AL-AL","AL-BL", "AL-BS", "BS"))
+abcdData_baseline_C4_filtered <- abcdData_baseline_C4_filtered %>%
+  filter(c4_allele2_structure %in% c("AL","AL-AL","AL-BL", "AL-BS", "BS"))
+```
+
+## Tally #
+```{r}
+# Ethnicity
+abcdData_baseline_C4_filtered %>% group_by(ethnicity) %>% tally()
+
+# Structure by ethnicity
+abcdData_baseline_C4_filtered %>% group_by(ethnicity, c4_allele1_structure) %>% tally()
+abcdData_baseline_C4_filtered %>% group_by(ethnicity, c4_allele2_structure) %>% tally()
+
+# Expression form by ethnicity
+abcdData_baseline_C4_filtered %>% group_by(ethnicity, c4a_expression) %>% tally()
+abcdData_baseline_C4_filtered %>% group_by(ethnicity, c4b_expression) %>% tally()
+```
+
+## Tally - ancestry x sex #
+```{r}
+# Sex
+abcdData_baseline_C4_filtered %>% group_by(sex) %>% tally()
+
+# Sex x ethnicity
+abcdData_baseline_C4_filtered %>% group_by(ethnicity, sex) %>% tally()
+
+# Interview age
+mean(abcdData_baseline_C4_filtered$interview_age[abcdData_baseline_C4_filtered$ethnicity == "AFR"])
+mean(abcdData_baseline_C4_filtered$interview_age[abcdData_baseline_C4_filtered$ethnicity == "Latinx"])
+mean(abcdData_baseline_C4_filtered$interview_age[abcdData_baseline_C4_filtered$ethnicity == "EUR"])
+```
+
+## Mean expression - ancestry#
+```{r}
+mean(abcdData_baseline_C4_filtered$c4a_expression[abcdData_baseline_C4_filtered$ethnicity == "AFR"])
+mean(abcdData_baseline_C4_filtered$c4a_expression[abcdData_baseline_C4_filtered$ethnicity == "Latinx"])
+mean(abcdData_baseline_C4_filtered$c4a_expression[abcdData_baseline_C4_filtered$ethnicity == "EUR"])
+
+mean(abcdData_baseline_C4_filtered$c4b_expression[abcdData_baseline_C4_filtered$ethnicity == "AFR"])
+mean(abcdData_baseline_C4_filtered$c4b_expression[abcdData_baseline_C4_filtered$ethnicity == "Latinx"])
+mean(abcdData_baseline_C4_filtered$c4b_expression[abcdData_baseline_C4_filtered$ethnicity == "EUR"])
+
+mean(abcdData_baseline_C4_filtered$c4a_expression)
+range(abcdData_baseline_C4_filtered$c4a_expression)
+sd(abcdData_baseline_C4_filtered$c4a_expression)
+
+mean(abcdData_baseline_C4_filtered$c4b_expression)
+range(abcdData_baseline_C4_filtered$c4b_expression)
+sd(abcdData_baseline_C4_filtered$c4b_expression)
+```
+
+## Order levels of C4A haplotyped #
+```{r}
+levels(as.factor(abcdData_baseline_C4_filtered$c4_allele1_structure))
+c4_allele1_structure.ord <- ordered(as.factor(abcdData_baseline_C4_filtered$c4_allele1_structure), 
+                                    levels = c("BS", "AL", "AL-BS", "AL-BL", "AL-AL"))
+levels(c4_allele1_structure.ord)
+```
+
+## Correlations between C4A and C4B expression #
+```{r}
+# Expression
+my.plot <- ggplot(abcdData_baseline_C4_filtered, aes(x=c4a_expression, y=c4b_expression)) +
+  geom_jitter(size=1,alpha=0.4, width = 0.1, height = 0.3) + geom_smooth(method=lm)+ stat_cor(method = "pearson", size=2.5, label.x = 0, label.y = 2.5) +
+  labs(x="Imputed C4A Expression", y = "Imputed C4B Expression") +
+  theme_bw()  + theme(axis.ticks=element_blank())
+my.plot
+my.plot1 <- my.plot + facet_grid(~ethnicity) + theme(legend.position="bottom", strip.background = element_blank(), panel.border=element_blank())
+ggsave(my.plot1, file = '../results/SuppFig2_Correlation_C4A.C4B.pdf', device = cairo_pdf, width = 5, height=4, units = 'in')
+```
+
+## Plot C4A expression count by ancestry #
+```{r}
+my.plot <- hist.plot <- abcdData_baseline_C4_filtered %>%
+  ggplot(aes(x=c4a_expression, fill=ethnicity, group = ethnicity)) +
+  geom_bar(color="black", alpha=0.6, width = 0.1, position = position_dodge2(preserve = "single")) + 
+  theme_classic() +
+  xlim(0, 2) +
+  labs(x="C4A Expression", y = "Count", fill = "Ancestry")
+my.plot  
+ggsave(my.plot, file = '../results/Figure1_Count_C4GREX.Ancestry.pdf', device = cairo_pdf, width = 5, height=3, units = 'in')
+```
+
+## Density plot #
+```{r}
+my.plot <- ggplot(abcdData_baseline_C4_filtered, aes(x = c4a_expression, y = c4_allele1_structure.ord)) + 
+  geom_density_ridges(aes(fill = c4_allele1_structure.ord), alpha = 0.6, bandwidth = 0.2) +
+  labs(x="C4A Expression ", y="C4 Haplotype", fill = "C4 Haplotype") +
+  theme(legend.position = "none") +
+  scale_y_discrete(expand = c(0, 0)) +
+  scale_x_continuous(expand = c(0, 0)) +
+  geom_smooth()
+my.plot1 <- my.plot + theme(axis.text.x = element_text(angle = 90)) +  coord_flip() + theme_classic()
+my.plot1
+ggsave(my.plot1, file = '../results/Figure1_Density_C4GREX.C4Haplotype.pdf', device = cairo_pdf, width = 5, height=3, units = 'in')
+```
+
+
+
